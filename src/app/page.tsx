@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import checklist from "@/data/checklist.json";
 import characterSnapshot from "@/data/character-snapshot.json";
 import { evaluateCompletionRule } from "@/lib/completion";
@@ -98,13 +98,14 @@ const getTopologicalOrder = (tasks: Task[], done: Record<string, boolean>) => {
 };
 
 export default function Home() {
-  const { title, tasks } = checklist as Checklist;
+  const { title, steps } = checklist as Checklist;
+  const allTasks = getAllTasks(steps);
 
   // ✅ Load from localStorage without useEffect (fixes react-hooks/set-state-in-effect)
   const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
-      const saved = localStorage.getItem("done");
+      const saved = localStorage.getItem("wow-checklist-done");
       return saved ? (JSON.parse(saved) as Record<string, boolean>) : {};
     } catch {
       return {};
@@ -155,20 +156,67 @@ export default function Home() {
   // ✅ No useMemo => fixes React Compiler preserve-manual-memoization + deps warning
   const baseTasks = hideCompleted ? tasks.filter((t) => !done[t.id]) : tasks;
 
-  const visibleTasks = [...baseTasks].sort((a, b) => {
-    // Focus-first at the top
-    const af = a.focusFirst ? 1 : 0;
-    const bf = b.focusFirst ? 1 : 0;
-    if (af !== bf) return bf - af;
+  return (
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <div className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <p className="text-sm uppercase tracking-widest text-amber-300/70">
+            The Burning Crusade Checklist
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold text-amber-100">
+            {title}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm text-amber-100/70">
+            Manual tracking until auto-sync arrives. Check tasks, follow the
+            “next up” focus list, and hide what’s already done.
+          </p>
+        </div>
 
-    // Ready tasks before locked tasks
-    const ar = isReady(a) ? 1 : 0;
-    const br = isReady(b) ? 1 : 0;
-    if (ar !== br) return br - ar;
+        <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 px-4 py-3 text-sm text-amber-100/80">
+          {profile ? (
+            <div className="space-y-2">
+              <p className="font-semibold text-amber-200">
+                Logged in as {profile.battletag ?? "Adventurer"}
+              </p>
+              <form action="/api/auth/logout" method="post">
+                <button
+                  type="submit"
+                  className="rounded-md border border-amber-300/40 px-3 py-1 text-xs uppercase tracking-wide text-amber-100"
+                >
+                  Log out
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p>Battle.net login enables profile-aware features.</p>
+              <a
+                href="/api/auth/login"
+                className="inline-flex items-center justify-center rounded-md bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900"
+              >
+                Log in with Battle.net
+              </a>
+              {profileError ? (
+                <p className="text-xs text-red-300">{profileError}</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
 
-    // Stable fallback
-    return a.title.localeCompare(b.title);
-  });
+      <section className="mt-8 rounded-xl border border-amber-500/30 bg-slate-900/70 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-amber-100/70">
+              Overall completion: {completedCount}/{allTasks.length}
+            </p>
+            <div className="mt-2 h-2 w-64 overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-amber-400"
+                style={{ width: `${overallPercent}%` }}
+              />
+            </div>
+          </div>
 
   const completedCount = tasks.filter((t) => done[t.id]).length;
   const nextTasks = getTopologicalOrder(tasks, done).slice(0, 5);
@@ -293,8 +341,13 @@ export default function Home() {
                       </span>
                     )}
                   </div>
+                </summary>
 
-                  {t.why && <p className="mt-1 text-sm opacity-80">{t.why}</p>}
+                <div className="mt-4 space-y-3">
+                  {stepTasks.map((task) => {
+                    const completed = !!done[task.id];
+                    const ready = isTaskReady(task, done);
+                    const impactScore = getImpactScore(task);
 
                   {needsManualConfirm && !completed ? (
                     <button
@@ -312,19 +365,55 @@ export default function Home() {
                     </p>
                   ) : null}
 
-                  {t.steps?.length ? (
-                    <ul className="mt-2 list-disc pl-5 text-sm">
-                      {t.steps.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ul>
+                  {stepTasks.length === 0 ? (
+                    <p className="text-sm text-amber-100/60">
+                      All tasks complete for this step.
+                    </p>
                   ) : null}
                 </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </details>
+            );
+          })}
+        </div>
+
+        <aside className="space-y-4">
+          <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 p-4">
+            <h2 className="text-lg font-semibold text-amber-100">
+              Next up (Top 5)
+            </h2>
+            <p className="mt-1 text-xs text-amber-100/70">
+              Ordered by prerequisite readiness + impact.
+            </p>
+            <ol className="mt-4 space-y-3 text-sm text-amber-100/80">
+              {nextUp.length ? (
+                nextUp.map((task) => (
+                  <li key={task.id} className="rounded-md bg-slate-900/80 p-3">
+                    <p className="font-semibold text-amber-200">
+                      {task.title}
+                    </p>
+                    <p className="text-xs text-amber-100/70">{task.how}</p>
+                  </li>
+                ))
+              ) : (
+                <li className="text-amber-100/60">
+                  You’re caught up! Toggle “Hide completed” to review.
+                </li>
+              )}
+            </ol>
+          </div>
+
+          <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 p-4 text-xs text-amber-100/70">
+            <p className="font-semibold text-amber-200">
+              Focus logic (manual)
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-4">
+              <li>Big upgrades score highest (e.g., trinkets, set bonuses).</li>
+              <li>Unlocks push future content (heroics, attunements).</li>
+              <li>Time gates help you plan weekly lockouts.</li>
+            </ul>
+          </div>
+        </aside>
+      </section>
     </main>
   );
 }
