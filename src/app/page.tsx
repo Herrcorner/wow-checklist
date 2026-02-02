@@ -117,7 +117,7 @@ export default function Home() {
   const setOverridesAndPersist = (next: Record<string, boolean>) => {
     setManualOverrides(next);
     localStorage.setItem("done", JSON.stringify(next));
-  };
+  }, []);
 
   const hasOverride = (id: string) =>
     Object.prototype.hasOwnProperty.call(manualOverrides, id);
@@ -221,9 +221,243 @@ export default function Home() {
   const completedCount = tasks.filter((t) => done[t.id]).length;
   const nextTasks = getTopologicalOrder(tasks, done).slice(0, 5);
 
+  const selectedCharacter = characters.find(
+    (character) => String(character.id ?? "") === selectedCharacterId,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardAccessToken", accessToken);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardTokenUserId", tokenUserId);
+  }, [tokenUserId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardRegion", region);
+  }, [region]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardCharacterId", selectedCharacterId);
+  }, [selectedCharacterId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (lastSync) {
+      localStorage.setItem("blizzardLastSync", String(lastSync));
+    }
+  }, [lastSync]);
+
+  const runSync = useCallback(
+    async (trigger: "manual" | "scheduled") => {
+      if (!accessToken || !selectedCharacter) return;
+      if (syncInFlight.current) return;
+
+      syncInFlight.current = true;
+      setSyncing(true);
+      setSyncErrors([]);
+      setSyncStatus(trigger === "manual" ? "Syncing…" : "Auto-syncing…");
+
+      try {
+        const response = await fetch("/api/blizzard/sync", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "x-token-user-id": tokenUserId,
+          },
+          body: JSON.stringify({
+            region,
+            locale: "en_US",
+            namespace: "profile-classic1",
+            realmSlug: selectedCharacter.realmSlug,
+            characterName: selectedCharacter.name,
+          }),
+        });
+
+        if (!response.ok) {
+          setSyncStatus("Sync failed");
+          return;
+        }
+
+        const payload = (await response.json()) as SyncResponse;
+        const updated = { ...done };
+
+        tasks.forEach((task) => {
+          if (shouldCompleteRepTask(task, payload.reputations)) {
+            updated[task.id] = true;
+          }
+          if (shouldCompleteEquipmentTask(task, payload.equipmentItems)) {
+            updated[task.id] = true;
+          }
+        });
+
+        setDoneAndPersist(updated);
+        setSyncErrors(payload.errors);
+        setLastSync(Date.now());
+        setSyncStatus(payload.errors.length ? "Synced with warnings" : "Synced");
+      } catch {
+        setSyncStatus("Sync failed");
+      } finally {
+        syncInFlight.current = false;
+        setSyncing(false);
+      }
+    },
+    [
+      accessToken,
+      done,
+      region,
+      selectedCharacter,
+      setDoneAndPersist,
+      tasks,
+      tokenUserId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!accessToken || !selectedCharacter) return;
+    if (!lastSync) return;
+    const elapsedMs = Date.now() - lastSync;
+    if (elapsedMs < SYNC_INTERVAL_HOURS * 60 * 60 * 1000) return;
+    void runSync("scheduled");
+  }, [accessToken, lastSync, runSync, selectedCharacter]);
+
+  const loadCharacters = async () => {
+    if (!accessToken) return;
+    setSyncStatus("Loading characters…");
+    try {
+      const response = await fetch(
+        `/api/blizzard/characters?region=${region}&locale=en_US&namespace=profile-classic1`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "x-token-user-id": tokenUserId,
+          },
+        },
+      );
+      if (!response.ok) {
+        setSyncStatus("Character load failed");
+        return;
+      }
+      const payload = (await response.json()) as {
+        characters: CharacterSummary[];
+      };
+      setCharacters(payload.characters);
+      if (payload.characters.length && !selectedCharacterId) {
+        setSelectedCharacterId(String(payload.characters[0]?.id ?? ""));
+      }
+      setSyncStatus("Characters loaded");
+    } catch {
+      setSyncStatus("Character load failed");
+    }
+  };
+
   return (
     <main className="mx-auto max-w-3xl p-6">
       <h1 className="text-2xl font-semibold">{title}</h1>
+
+      <section className="mt-6 rounded-lg border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Blizzard Sync</h2>
+            <p className="text-sm opacity-80">
+              Paste a Battle.net access token to sync Classic character data.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded border px-3 py-1 text-sm"
+            onClick={() => runSync("manual")}
+            disabled={syncing || !accessToken || !selectedCharacter}
+          >
+            {syncing ? "Syncing…" : "Sync now"}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            Access token
+            <input
+              className="rounded border px-2 py-1"
+              value={accessToken}
+              onChange={(event) => setAccessToken(event.target.value)}
+              placeholder="Paste your Battle.net access token"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Token user id (for rate limits)
+            <input
+              className="rounded border px-2 py-1"
+              value={tokenUserId}
+              onChange={(event) => setTokenUserId(event.target.value)}
+              placeholder="e.g. battle-tag or user id"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Region
+            <select
+              className="rounded border px-2 py-1"
+              value={region}
+              onChange={(event) => setRegion(event.target.value)}
+            >
+              <option value="us">US</option>
+              <option value="eu">EU</option>
+              <option value="kr">KR</option>
+              <option value="tw">TW</option>
+            </select>
+          </label>
+          <div className="flex flex-col gap-2 text-sm">
+            <button
+              type="button"
+              className="rounded border px-3 py-1"
+              onClick={loadCharacters}
+              disabled={!accessToken}
+            >
+              Load characters
+            </button>
+            <span className="text-xs opacity-70">{syncStatus}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            Selected character
+            <select
+              className="rounded border px-2 py-1"
+              value={selectedCharacterId}
+              onChange={(event) => setSelectedCharacterId(event.target.value)}
+            >
+              <option value="">Select a character</option>
+              {characters.map((character) => (
+                <option key={character.id} value={character.id}>
+                  {character.name} ({character.realm})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="text-sm">
+            <p className="font-medium">Last sync</p>
+            <p className="text-xs opacity-70">
+              {lastSync
+                ? new Date(lastSync).toLocaleString()
+                : "Not synced yet"}
+            </p>
+            {syncErrors.length ? (
+              <ul className="mt-2 list-disc pl-5 text-xs text-amber-700">
+                {syncErrors.map((error) => (
+                  <li key={error.endpoint}>
+                    {error.endpoint}: {error.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       <div className="mt-2 flex items-center justify-between gap-4">
         <p className="text-sm opacity-80">
