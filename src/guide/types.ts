@@ -11,10 +11,12 @@ export type Standing =
 export type CompletionRule =
   | { type: "manual" }
   | { type: "manual_repeatable" }
+  | { type: "item_owned"; itemId: string } // item owned/equipped (inventory optional)
   | { type: "item_confirmed"; itemId: string } // item owned/equipped/confirmed (no OAuth)
   | { type: "rep_at_least"; factionId: string; standing: Standing }
   | { type: "rep_at_least_any"; options: Array<{ factionId: string; standing: Standing }> }
-  | { type: "currency_at_least"; currencyId: string; amount: number };
+  | { type: "currency_at_least"; currencyId: string; amount: number }
+  | { type: "boss_killed"; bossId: string };
 
 export type TaskKind = "progression" | "unlock" | "gear" | "reputation" | "currency" | "repeatable";
 

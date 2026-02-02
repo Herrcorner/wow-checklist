@@ -1,0 +1,8 @@
+{
+  "equipment": ["windcallers_orb"],
+  "reputation": {
+    "thrallmar": { "standing": "revered" },
+    "cenarion_expedition": { "standing": "honored" }
+  },
+  "currencies": {}
+}
