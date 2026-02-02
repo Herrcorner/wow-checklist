@@ -1,0 +1,40 @@
+{
+  "title": "Holy Priest TBC Phase 1 - Pre-BiS Path",
+  "tasks": [
+    {
+      "id": "rep-thrallmar-honhold-revered",
+      "title": "Get Thrallmar / Honor Hold to Revered",
+      "type": "reputation",
+      "focusFirst": true,
+      "why": "Unlock key rep rewards and heroic key progression.",
+      "steps": [
+        "Run Hellfire Ramparts / Blood Furnace / Shattered Halls",
+        "Turn in any rep items you find",
+        "Buy the ring reward at Revered"
+      ]
+    },
+    {
+      "id": "rep-cenarion-expedition-exalted",
+      "title": "Get Cenarion Expedition to Exalted",
+      "type": "reputation",
+      "focusFirst": true,
+      "why": "Exalted gives Windcaller’s Orb (strong off-hand).",
+      "steps": [
+        "Run Slave Pens / Underbog / Steamvaults",
+        "Do Cenarion Expedition quests in Zangarmarsh",
+        "Grind Steamvaults for fast rep"
+      ]
+    },
+    {
+      "id": "dungeon-shadow-lab-heroic-truncheon",
+      "title": "Run Heroic Shadow Labyrinth for Shockwave Truncheon",
+      "type": "dungeon",
+      "prerequisites": ["rep-thrallmar-honhold-revered"],
+      "why": "Great pre-raid healer weapon.",
+      "steps": [
+        "Get the Heroic key (Revered)",
+        "Run Shadow Lab (Heroic) until Murmur drops it"
+      ]
+    }
+  ]
+}
