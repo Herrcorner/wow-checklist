@@ -2,91 +2,55 @@
   "title": "Holy Priest TBC Phase 1 - Pre-BiS Path",
   "steps": [
     {
-      "id": "attunements-keys",
-      "title": "Attunements & Keys",
-      "description": "Unlock heroics, raids, and dungeon access.",
-      "tasks": [
-        {
-          "id": "attune-karazhan",
-          "title": "Finish Karazhan Attunement",
-          "type": "attunement",
-          "why": "Unlocks weekly Kara clears for early badges + drops.",
-          "how": "Follow the Master's Key questline starting in Karazhan.",
-          "impact": ["unlock", "time-gate"]
-        },
-        {
-          "id": "rep-thrallmar-honhold-revered",
-          "title": "Thrallmar / Honor Hold to Revered",
-          "type": "reputation",
-          "why": "Heroic key + access to Shattered Halls.",
-          "how": "Run Hellfire Ramparts, Blood Furnace, and Shattered Halls.",
-          "impact": ["unlock"]
-        },
-        {
-          "id": "rep-cenarion-revered",
-          "title": "Cenarion Expedition to Revered",
-          "type": "reputation",
-          "why": "Heroic key + access to heroic Steamvaults.",
-          "how": "Run Slave Pens/Underbog + Zangarmarsh quests.",
-          "impact": ["unlock"]
-        }
+      "id": "rep-thrallmar-honhold-revered",
+      "title": "Get Thrallmar / Honor Hold to Revered",
+      "type": "reputation",
+      "focusFirst": true,
+      "completion": {
+        "type": "rep_at_least_any",
+        "options": [
+          { "factionId": "thrallmar", "standing": "revered" },
+          { "factionId": "honor_hold", "standing": "revered" }
+        ]
+      },
+      "why": "Unlock key rep rewards and heroic key progression.",
+      "steps": [
+        "Run Hellfire Ramparts / Blood Furnace / Shattered Halls",
+        "Turn in any rep items you find",
+        "Buy the ring reward at Revered"
       ]
     },
     {
-      "id": "reputation-upgrades",
-      "title": "Reputation Upgrades",
-      "description": "Reps that unlock BIS or near-BIS pieces.",
-      "tasks": [
-        {
-          "id": "rep-cenarion-exalted",
-          "title": "Cenarion Expedition to Exalted",
-          "type": "reputation",
-          "why": "Windcaller’s Orb is a strong pre-raid off-hand.",
-          "how": "Grind Steamvaults + turn in Unidentified Plant Parts.",
-          "prerequisites": ["rep-cenarion-revered"],
-          "impact": ["big-upgrade", "unlock"]
-        },
-        {
-          "id": "rep-lower-city-revered",
-          "title": "Lower City to Revered",
-          "type": "reputation",
-          "why": "Unlocks heroic Shadow Labyrinth + key healer trinkets.",
-          "how": "Run Sethekk Halls/Shadow Labyrinth + Terokkar quests.",
-          "impact": ["unlock"]
-        }
+      "id": "rep-cenarion-expedition-exalted",
+      "title": "Get Cenarion Expedition to Exalted",
+      "type": "reputation",
+      "focusFirst": true,
+      "completion": {
+        "type": "rep_at_least",
+        "factionId": "cenarion_expedition",
+        "standing": "exalted"
+      },
+      "why": "Exalted gives Windcaller’s Orb (strong off-hand).",
+      "steps": [
+        "Run Slave Pens / Underbog / Steamvaults",
+        "Do Cenarion Expedition quests in Zangarmarsh",
+        "Grind Steamvaults for fast rep"
       ]
     },
     {
-      "id": "heroics-gear",
-      "title": "Heroics & Gear",
-      "description": "Target upgrades and weekly time gates.",
-      "tasks": [
-        {
-          "id": "heroic-shadow-lab-truncheon",
-          "title": "Heroic Shadow Labyrinth → Shockwave Truncheon",
-          "type": "dungeon",
-          "why": "Top-tier healing weapon before raids.",
-          "how": "Farm Heroic Shadow Labyrinth (Murmur drop).",
-          "prerequisites": ["rep-thrallmar-honhold-revered", "rep-lower-city-revered"],
-          "impact": ["big-upgrade"]
-        },
-        {
-          "id": "badge-trinket-icon",
-          "title": "Save Badges for Icon of the Silver Crescent",
-          "type": "badge",
-          "why": "Strong on-use mana trinket from badge vendor.",
-          "how": "Complete weekly Kara + heroics to stockpile badges.",
-          "prerequisites": ["attune-karazhan"],
-          "impact": ["big-upgrade", "time-gate"]
-        },
-        {
-          "id": "craft-primal-mooncloth",
-          "title": "Craft 3x Primal Mooncloth Set",
-          "type": "crafting",
-          "why": "Huge healing throughput set bonus.",
-          "how": "Tailoring cooldown crafts (weekly time gate).",
-          "impact": ["big-upgrade", "time-gate"]
-        }
+      "id": "dungeon-shadow-lab-heroic-truncheon",
+      "title": "Run Heroic Shadow Labyrinth for Shockwave Truncheon",
+      "type": "dungeon",
+      "powerGain": 4,
+      "prerequisites": ["rep-thrallmar-honhold-revered"],
+      "completion": {
+        "type": "item_owned",
+        "itemId": "shockwave_truncheon"
+      },
+      "why": "Great pre-raid healer weapon.",
+      "steps": [
+        "Get the Heroic key (Revered)",
+        "Run Shadow Lab (Heroic) until Murmur drops it"
       ]
     }
   ]
