@@ -220,6 +220,20 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const syncInFlight = useRef(false);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const loginStatus = params.get("login");
+    if (!loginStatus) return;
+    const messageMap: Record<string, string> = {
+      missing: "Battle.net login was missing required parameters.",
+      state: "Battle.net login expired. Please try again.",
+      token: "Battle.net login failed to exchange the token. Please retry.",
+      config: "Battle.net login is not configured on this environment.",
+    };
+    setProfileError(messageMap[loginStatus] ?? "Battle.net login failed.");
+  }, []);
+
   const setOverridesAndPersist = useCallback(
     (next: Record<string, boolean>) => {
       setManualOverrides(next);
