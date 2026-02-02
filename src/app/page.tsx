@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import checklist from "@/data/checklist.json";
 import characterSnapshot from "@/data/character-snapshot.json";
+import type { CharacterSnapshot } from "@/lib/completion";
 import { evaluateCompletionRule } from "@/lib/completion";
-import { CompletionRule } from "@/guide/types";
+import type { CompletionRule, Standing } from "@/guide/types";
+
+const SYNC_INTERVAL_HOURS = 6;
 
 type Task = {
   id: string;
   title: string;
   type: string;
+  completion?: CompletionRule;
   focusFirst?: boolean;
   why?: string;
   prerequisites?: string[];
@@ -21,8 +31,48 @@ type Task = {
 
 type Checklist = {
   title: string;
-  tasks: Task[];
+  steps: Task[];
 };
+
+type Profile = {
+  battletag?: string;
+  id?: number;
+};
+
+type CharacterSummary = {
+  id?: number;
+  name: string;
+  level?: number;
+  realm: string;
+  realmSlug: string;
+  playableClass?: string;
+};
+
+type SyncResponse = {
+  equipmentItems: string[];
+  reputations: Array<{
+    name: string;
+    standingName: string;
+    standingValue: number;
+    standingMax: number;
+    standingTier: number;
+  }>;
+  errors: Array<{ endpoint: string; status?: number; message: string }>;
+};
+
+const standingRank: Record<Standing, number> = {
+  hated: 0,
+  hostile: 1,
+  unfriendly: 2,
+  neutral: 3,
+  friendly: 4,
+  honored: 5,
+  revered: 6,
+  exalted: 7,
+};
+
+const normalizeKey = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
 const scoreTask = (task: Task) => {
   const unlockValue = task.unlockValue ?? 0;
@@ -84,7 +134,9 @@ const getTopologicalOrder = (tasks: Task[], done: Record<string, boolean>) => {
 
   if (ordered.length !== remaining.length) {
     const fallback = remaining
-      .filter((task) => !ordered.find((orderedTask) => orderedTask.id === task.id))
+      .filter(
+        (task) => !ordered.find((orderedTask) => orderedTask.id === task.id),
+      )
       .sort((a, b) => {
         const scoreDiff = scoreTask(b) - scoreTask(a);
         if (scoreDiff !== 0) return scoreDiff;
@@ -97,11 +149,50 @@ const getTopologicalOrder = (tasks: Task[], done: Record<string, boolean>) => {
   return ordered;
 };
 
+const shouldCompleteEquipmentTask = (task: Task, equipmentItems: string[]) => {
+  if (!task.completion) return false;
+  if (task.completion.type !== "item_owned") return false;
+  const targetId = normalizeKey(task.completion.itemId);
+  return equipmentItems.some((item) => normalizeKey(item) === targetId);
+};
+
+const getStandingRank = (standingName: string) => {
+  const key = standingName.toLowerCase() as Standing;
+  return standingRank[key] ?? -1;
+};
+
+const shouldCompleteRepTask = (task: Task, reputations: SyncResponse["reputations"]) => {
+  if (!task.completion) return false;
+
+  if (task.completion.type === "rep_at_least") {
+    const targetId = normalizeKey(task.completion.factionId);
+    const match = reputations.find(
+      (rep) => normalizeKey(rep.name) === targetId,
+    );
+    if (!match) return false;
+    return getStandingRank(match.standingName) >= standingRank[task.completion.standing];
+  }
+
+  if (task.completion.type === "rep_at_least_any") {
+    return task.completion.options.some((option) =>
+      shouldCompleteRepTask(
+        { ...task, completion: { type: "rep_at_least", ...option } },
+        reputations,
+      ),
+    );
+  }
+
+  return false;
+};
+
 export default function Home() {
   const { title, steps } = checklist as Checklist;
-  const allTasks = getAllTasks(steps);
+  const tasks = steps;
+  const snapshot = characterSnapshot as CharacterSnapshot;
 
-  // ✅ Load from localStorage without useEffect (fixes react-hooks/set-state-in-effect)
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -112,49 +203,287 @@ export default function Home() {
     }
   });
 
-  const [hideCompleted, setHideCompleted] = useState(false);
+  const [showReadyOnly, setShowReadyOnly] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
 
-  const setOverridesAndPersist = (next: Record<string, boolean>) => {
-    setManualOverrides(next);
-    localStorage.setItem("done", JSON.stringify(next));
-  }, []);
+  const [accessToken, setAccessToken] = useState("");
+  const [tokenUserId, setTokenUserId] = useState("");
+  const [region, setRegion] = useState("us");
+  const [characters, setCharacters] = useState<CharacterSummary[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [syncStatus, setSyncStatus] = useState("Not synced");
+  const [syncErrors, setSyncErrors] = useState<SyncResponse["errors"]>([]);
+  const [lastSync, setLastSync] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const syncInFlight = useRef(false);
 
-  const hasOverride = (id: string) =>
-    Object.prototype.hasOwnProperty.call(manualOverrides, id);
-
-  const setManualOverride = (id: string, value: boolean, autoCompleted: boolean) => {
-    const next = { ...manualOverrides };
-    if (value === autoCompleted) {
-      delete next[id];
-    } else {
-      next[id] = value;
-    }
-    setOverridesAndPersist(next);
-  };
-
-  const toggle = (id: string, autoCompleted: boolean) => {
-    const current = hasOverride(id) ? manualOverrides[id] : autoCompleted;
-    setManualOverride(id, !current, autoCompleted);
-  };
-
-  const completionById = tasks.reduce(
-    (acc, task) => {
-      acc[task.id] = evaluateCompletionRule(task.completion, characterSnapshot);
-      return acc;
+  const setOverridesAndPersist = useCallback(
+    (next: Record<string, boolean>) => {
+      setManualOverrides(next);
+      if (typeof window === "undefined") return;
+      localStorage.setItem("wow-checklist-done", JSON.stringify(next));
     },
-    {} as Record<string, ReturnType<typeof evaluateCompletionRule>>,
+    [],
   );
 
-  const isCompleted = (taskId: string) => {
-    const autoCompleted = completionById[taskId]?.completed ?? false;
-    return hasOverride(taskId) ? manualOverrides[taskId] : autoCompleted;
-  };
+  const hasOverride = useCallback(
+    (id: string) => Object.prototype.hasOwnProperty.call(manualOverrides, id),
+    [manualOverrides],
+  );
 
-  const isReady = (t: Task) =>
-    (t.prerequisites ?? []).every((p) => isCompleted(p) === true);
+  const setManualOverride = useCallback(
+    (id: string, value: boolean, autoCompleted: boolean) => {
+      const next = { ...manualOverrides };
+      if (value === autoCompleted) {
+        delete next[id];
+      } else {
+        next[id] = value;
+      }
+      setOverridesAndPersist(next);
+    },
+    [manualOverrides, setOverridesAndPersist],
+  );
 
-  // ✅ No useMemo => fixes React Compiler preserve-manual-memoization + deps warning
-  const baseTasks = hideCompleted ? tasks.filter((t) => !done[t.id]) : tasks;
+  const completionById = useMemo(
+    () =>
+      tasks.reduce(
+        (acc, task) => {
+          acc[task.id] = evaluateCompletionRule(task.completion, snapshot);
+          return acc;
+        },
+        {} as Record<string, ReturnType<typeof evaluateCompletionRule>>,
+      ),
+    [snapshot, tasks],
+  );
+
+  const done = useMemo(() => {
+    return tasks.reduce(
+      (acc, task) => {
+        const autoCompleted = completionById[task.id]?.completed ?? false;
+        acc[task.id] = hasOverride(task.id)
+          ? manualOverrides[task.id]
+          : autoCompleted;
+        return acc;
+      },
+      {} as Record<string, boolean>,
+    );
+  }, [completionById, hasOverride, manualOverrides, tasks]);
+
+  const isReady = useCallback(
+    (task: Task) => (task.prerequisites ?? []).every((p) => done[p] === true),
+    [done],
+  );
+
+  const nextTasks = useMemo(
+    () => getTopologicalOrder(tasks, done).slice(0, 5),
+    [done, tasks],
+  );
+
+  const completedCount = useMemo(
+    () => tasks.filter((task) => done[task.id]).length,
+    [done, tasks],
+  );
+
+  const completionByPercent = useMemo(() => {
+    if (!tasks.length) return 0;
+    return Math.round((completedCount / tasks.length) * 100);
+  }, [completedCount, tasks.length]);
+
+  const visibleTasks = useMemo(
+    () =>
+      tasks.filter((task) => {
+        const completed = done[task.id] ?? false;
+        if (!showCompleted && completed) return false;
+        if (showReadyOnly && !isReady(task)) return false;
+        return true;
+      }),
+    [done, isReady, showCompleted, showReadyOnly, tasks],
+  );
+
+  const selectedCharacter = useMemo(
+    () => characters.find((character) => String(character.id ?? "") === selectedCharacterId),
+    [characters, selectedCharacterId],
+  );
+
+  const toggle = useCallback(
+    (id: string, autoCompleted: boolean) => {
+      const current = hasOverride(id) ? manualOverrides[id] : autoCompleted;
+      setManualOverride(id, !current, autoCompleted);
+    },
+    [hasOverride, manualOverrides, setManualOverride],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedToken = localStorage.getItem("blizzardAccessToken");
+    const savedUserId = localStorage.getItem("blizzardTokenUserId");
+    const savedRegion = localStorage.getItem("blizzardRegion");
+    const savedCharacterId = localStorage.getItem("blizzardCharacterId");
+    const savedLastSync = localStorage.getItem("blizzardLastSync");
+    if (savedToken) setAccessToken(savedToken);
+    if (savedUserId) setTokenUserId(savedUserId);
+    if (savedRegion) setRegion(savedRegion);
+    if (savedCharacterId) setSelectedCharacterId(savedCharacterId);
+    if (savedLastSync) setLastSync(Number(savedLastSync));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardAccessToken", accessToken);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardTokenUserId", tokenUserId);
+  }, [tokenUserId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardRegion", region);
+  }, [region]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("blizzardCharacterId", selectedCharacterId);
+  }, [selectedCharacterId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (lastSync) {
+      localStorage.setItem("blizzardLastSync", String(lastSync));
+    }
+  }, [lastSync]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProfile = async () => {
+      try {
+        const response = await fetch("/api/profile");
+        if (!response.ok) {
+          if (response.status !== 401) {
+            setProfileError("Unable to load profile.");
+          }
+          return;
+        }
+        const payload = (await response.json()) as Profile;
+        if (!active) return;
+        setProfile(payload);
+        if (payload.battletag && !tokenUserId) {
+          setTokenUserId(payload.battletag);
+        }
+      } catch {
+        if (active) setProfileError("Unable to load profile.");
+      }
+    };
+    void loadProfile();
+    return () => {
+      active = false;
+    };
+  }, [tokenUserId]);
+
+  const runSync = useCallback(
+    async (trigger: "manual" | "scheduled") => {
+      if (!accessToken || !selectedCharacter) return;
+      if (syncInFlight.current) return;
+
+      syncInFlight.current = true;
+      setSyncing(true);
+      setSyncErrors([]);
+      setSyncStatus(trigger === "manual" ? "Syncing…" : "Auto-syncing…");
+
+      try {
+        const response = await fetch("/api/blizzard/sync", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "x-token-user-id": tokenUserId,
+          },
+          body: JSON.stringify({
+            region,
+            locale: "en_US",
+            namespace: "profile-classic1",
+            realmSlug: selectedCharacter.realmSlug,
+            characterName: selectedCharacter.name,
+          }),
+        });
+
+        if (!response.ok) {
+          setSyncStatus("Sync failed");
+          return;
+        }
+
+        const payload = (await response.json()) as SyncResponse;
+        const updated = { ...manualOverrides };
+
+        tasks.forEach((task) => {
+          if (shouldCompleteRepTask(task, payload.reputations)) {
+            updated[task.id] = true;
+          }
+          if (shouldCompleteEquipmentTask(task, payload.equipmentItems)) {
+            updated[task.id] = true;
+          }
+        });
+
+        setOverridesAndPersist(updated);
+        setSyncErrors(payload.errors);
+        setLastSync(Date.now());
+        setSyncStatus(payload.errors.length ? "Synced with warnings" : "Synced");
+      } catch {
+        setSyncStatus("Sync failed");
+      } finally {
+        syncInFlight.current = false;
+        setSyncing(false);
+      }
+    },
+    [
+      accessToken,
+      manualOverrides,
+      region,
+      selectedCharacter,
+      setOverridesAndPersist,
+      tasks,
+      tokenUserId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!accessToken || !selectedCharacter) return;
+    if (!lastSync) return;
+    const elapsedMs = Date.now() - lastSync;
+    if (elapsedMs < SYNC_INTERVAL_HOURS * 60 * 60 * 1000) return;
+    void runSync("scheduled");
+  }, [accessToken, lastSync, runSync, selectedCharacter]);
+
+  const loadCharacters = useCallback(async () => {
+    if (!accessToken) return;
+    setSyncStatus("Loading characters…");
+    try {
+      const response = await fetch(
+        `/api/blizzard/characters?region=${region}&locale=en_US&namespace=profile-classic1`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "x-token-user-id": tokenUserId,
+          },
+        },
+      );
+      if (!response.ok) {
+        setSyncStatus("Character load failed");
+        return;
+      }
+      const payload = (await response.json()) as {
+        characters: CharacterSummary[];
+      };
+      setCharacters(payload.characters);
+      if (payload.characters.length && !selectedCharacterId) {
+        setSelectedCharacterId(String(payload.characters[0]?.id ?? ""));
+      }
+      setSyncStatus("Characters loaded");
+    } catch {
+      setSyncStatus("Character load failed");
+    }
+  }, [accessToken, region, selectedCharacterId, tokenUserId]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -208,286 +537,40 @@ export default function Home() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm text-amber-100/70">
-              Overall completion: {completedCount}/{allTasks.length}
+              Overall completion: {completedCount}/{tasks.length}
             </p>
             <div className="mt-2 h-2 w-64 overflow-hidden rounded-full bg-slate-800">
               <div
                 className="h-full rounded-full bg-amber-400"
-                style={{ width: `${overallPercent}%` }}
+                style={{ width: `${completionByPercent}%` }}
               />
             </div>
           </div>
-
-  const completedCount = tasks.filter((t) => done[t.id]).length;
-  const nextTasks = getTopologicalOrder(tasks, done).slice(0, 5);
-
-  const selectedCharacter = characters.find(
-    (character) => String(character.id ?? "") === selectedCharacterId,
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("blizzardAccessToken", accessToken);
-  }, [accessToken]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("blizzardTokenUserId", tokenUserId);
-  }, [tokenUserId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("blizzardRegion", region);
-  }, [region]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("blizzardCharacterId", selectedCharacterId);
-  }, [selectedCharacterId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (lastSync) {
-      localStorage.setItem("blizzardLastSync", String(lastSync));
-    }
-  }, [lastSync]);
-
-  const runSync = useCallback(
-    async (trigger: "manual" | "scheduled") => {
-      if (!accessToken || !selectedCharacter) return;
-      if (syncInFlight.current) return;
-
-      syncInFlight.current = true;
-      setSyncing(true);
-      setSyncErrors([]);
-      setSyncStatus(trigger === "manual" ? "Syncing…" : "Auto-syncing…");
-
-      try {
-        const response = await fetch("/api/blizzard/sync", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-            "x-token-user-id": tokenUserId,
-          },
-          body: JSON.stringify({
-            region,
-            locale: "en_US",
-            namespace: "profile-classic1",
-            realmSlug: selectedCharacter.realmSlug,
-            characterName: selectedCharacter.name,
-          }),
-        });
-
-        if (!response.ok) {
-          setSyncStatus("Sync failed");
-          return;
-        }
-
-        const payload = (await response.json()) as SyncResponse;
-        const updated = { ...done };
-
-        tasks.forEach((task) => {
-          if (shouldCompleteRepTask(task, payload.reputations)) {
-            updated[task.id] = true;
-          }
-          if (shouldCompleteEquipmentTask(task, payload.equipmentItems)) {
-            updated[task.id] = true;
-          }
-        });
-
-        setDoneAndPersist(updated);
-        setSyncErrors(payload.errors);
-        setLastSync(Date.now());
-        setSyncStatus(payload.errors.length ? "Synced with warnings" : "Synced");
-      } catch {
-        setSyncStatus("Sync failed");
-      } finally {
-        syncInFlight.current = false;
-        setSyncing(false);
-      }
-    },
-    [
-      accessToken,
-      done,
-      region,
-      selectedCharacter,
-      setDoneAndPersist,
-      tasks,
-      tokenUserId,
-    ],
-  );
-
-  useEffect(() => {
-    if (!accessToken || !selectedCharacter) return;
-    if (!lastSync) return;
-    const elapsedMs = Date.now() - lastSync;
-    if (elapsedMs < SYNC_INTERVAL_HOURS * 60 * 60 * 1000) return;
-    void runSync("scheduled");
-  }, [accessToken, lastSync, runSync, selectedCharacter]);
-
-  const loadCharacters = async () => {
-    if (!accessToken) return;
-    setSyncStatus("Loading characters…");
-    try {
-      const response = await fetch(
-        `/api/blizzard/characters?region=${region}&locale=en_US&namespace=profile-classic1`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "x-token-user-id": tokenUserId,
-          },
-        },
-      );
-      if (!response.ok) {
-        setSyncStatus("Character load failed");
-        return;
-      }
-      const payload = (await response.json()) as {
-        characters: CharacterSummary[];
-      };
-      setCharacters(payload.characters);
-      if (payload.characters.length && !selectedCharacterId) {
-        setSelectedCharacterId(String(payload.characters[0]?.id ?? ""));
-      }
-      setSyncStatus("Characters loaded");
-    } catch {
-      setSyncStatus("Character load failed");
-    }
-  };
-
-  return (
-    <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-
-      <section className="mt-6 rounded-lg border p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Blizzard Sync</h2>
-            <p className="text-sm opacity-80">
-              Paste a Battle.net access token to sync Classic character data.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded border px-3 py-1 text-sm"
-            onClick={() => runSync("manual")}
-            disabled={syncing || !accessToken || !selectedCharacter}
-          >
-            {syncing ? "Syncing…" : "Sync now"}
-          </button>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            Access token
-            <input
-              className="rounded border px-2 py-1"
-              value={accessToken}
-              onChange={(event) => setAccessToken(event.target.value)}
-              placeholder="Paste your Battle.net access token"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Token user id (for rate limits)
-            <input
-              className="rounded border px-2 py-1"
-              value={tokenUserId}
-              onChange={(event) => setTokenUserId(event.target.value)}
-              placeholder="e.g. battle-tag or user id"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Region
-            <select
-              className="rounded border px-2 py-1"
-              value={region}
-              onChange={(event) => setRegion(event.target.value)}
-            >
-              <option value="us">US</option>
-              <option value="eu">EU</option>
-              <option value="kr">KR</option>
-              <option value="tw">TW</option>
-            </select>
-          </label>
-          <div className="flex flex-col gap-2 text-sm">
-            <button
-              type="button"
-              className="rounded border px-3 py-1"
-              onClick={loadCharacters}
-              disabled={!accessToken}
-            >
-              Load characters
-            </button>
-            <span className="text-xs opacity-70">{syncStatus}</span>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            Selected character
-            <select
-              className="rounded border px-2 py-1"
-              value={selectedCharacterId}
-              onChange={(event) => setSelectedCharacterId(event.target.value)}
-            >
-              <option value="">Select a character</option>
-              {characters.map((character) => (
-                <option key={character.id} value={character.id}>
-                  {character.name} ({character.realm})
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="text-sm">
-            <p className="font-medium">Last sync</p>
-            <p className="text-xs opacity-70">
-              {lastSync
-                ? new Date(lastSync).toLocaleString()
-                : "Not synced yet"}
-            </p>
-            {syncErrors.length ? (
-              <ul className="mt-2 list-disc pl-5 text-xs text-amber-700">
-                {syncErrors.map((error) => (
-                  <li key={error.endpoint}>
-                    {error.endpoint}: {error.message}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+          <div className="flex flex-wrap items-center gap-4 text-xs text-amber-100/70">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showReadyOnly}
+                onChange={(event) => setShowReadyOnly(event.target.checked)}
+              />
+              Show only ready tasks
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(event) => setShowCompleted(event.target.checked)}
+              />
+              Show completed
+            </label>
           </div>
         </div>
       </section>
 
-      <div className="mt-2 flex items-center justify-between gap-4">
-        <p className="text-sm opacity-80">
-          Completed: {completedCount}/{tasks.length}
-        </p>
-
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showReadyOnly}
-              onChange={(e) => setShowReadyOnly(e.target.checked)}
-            />
-            Show only ready tasks
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showCompleted}
-              onChange={(e) => setShowCompleted(e.target.checked)}
-            />
-            Show completed
-          </label>
-        </div>
-      </div>
-
-      <section className="mt-6 rounded-lg border p-4">
+      <section className="mt-6 rounded-lg border border-amber-500/30 bg-slate-900/70 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-medium">Next 5 tasks</h2>
-          <p className="text-xs opacity-70">
+          <h2 className="text-lg font-medium text-amber-100">Next 5 tasks</h2>
+          <p className="text-xs text-amber-100/70">
             Sorted by prerequisites + unlock, time-gating, and power gain.
           </p>
         </div>
@@ -499,7 +582,7 @@ export default function Home() {
             return (
               <li
                 key={task.id}
-                className="rounded-md border border-dashed px-3 py-2"
+                className="rounded-md border border-amber-500/20 px-3 py-2"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className={ready ? "" : "opacity-60"}>
@@ -520,92 +603,194 @@ export default function Home() {
         </ul>
       </section>
 
-      <div className="mt-6 space-y-4">
-        {visibleTasks.map((t) => {
-          const completed = isCompleted(t.id);
-          const ready = isReady(t);
-          const completionMeta = completionById[t.id];
-          const autoCompleted = completionMeta?.completed ?? false;
-          const needsManualConfirm = completionMeta?.needsManualConfirm ?? false;
+      <section className="mt-6 rounded-lg border border-amber-500/30 bg-slate-900/70 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-amber-100">Blizzard Sync</h2>
+            <p className="text-sm text-amber-100/70">
+              Paste a Battle.net access token to sync Classic character data.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded border border-amber-400/30 px-3 py-1 text-sm text-amber-100"
+            onClick={() => runSync("manual")}
+            disabled={syncing || !accessToken || !selectedCharacter}
+          >
+            {syncing ? "Syncing…" : "Sync now"}
+          </button>
+        </div>
 
-          return (
-            <div
-              key={t.id}
-              className={`rounded-lg border p-4 ${!ready ? "opacity-60" : ""}`}
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+            Access token
+            <input
+              className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
+              value={accessToken}
+              onChange={(event) => setAccessToken(event.target.value)}
+              placeholder="Paste your Battle.net access token"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+            Token user id (for rate limits)
+            <input
+              className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
+              value={tokenUserId}
+              onChange={(event) => setTokenUserId(event.target.value)}
+              placeholder="e.g. battle-tag or user id"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+            Region
+            <select
+              className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
+              value={region}
+              onChange={(event) => setRegion(event.target.value)}
             >
-              <div className="flex items-start gap-3">
-                <button
-                  type="button"
-                  className={`mt-1 h-5 w-5 rounded border ${
-                    completed ? "bg-black" : ""
-                  }`}
-                  onClick={() => toggle(t.id, autoCompleted)}
-                  aria-label={`Mark ${t.title} complete`}
-                />
+              <option value="us">US</option>
+              <option value="eu">EU</option>
+              <option value="kr">KR</option>
+              <option value="tw">TW</option>
+            </select>
+          </label>
+          <div className="flex flex-col gap-2 text-sm text-amber-100/80">
+            <button
+              type="button"
+              className="rounded border border-amber-400/30 px-3 py-1"
+              onClick={loadCharacters}
+              disabled={!accessToken}
+            >
+              Load characters
+            </button>
+            <span className="text-xs opacity-70">{syncStatus}</span>
+          </div>
+        </div>
 
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-medium">{t.title}</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+            Selected character
+            <select
+              className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
+              value={selectedCharacterId}
+              onChange={(event) => setSelectedCharacterId(event.target.value)}
+            >
+              <option value="">Select a character</option>
+              {characters.map((character) => (
+                <option key={character.id} value={character.id}>
+                  {character.name} ({character.realm})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="text-sm text-amber-100/80">
+            <p className="font-medium">Last sync</p>
+            <p className="text-xs opacity-70">
+              {lastSync ? new Date(lastSync).toLocaleString() : "Not synced yet"}
+            </p>
+            {syncErrors.length ? (
+              <ul className="mt-2 list-disc pl-5 text-xs text-amber-300">
+                {syncErrors.map((error) => (
+                  <li key={error.endpoint}>
+                    {error.endpoint}: {error.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
-                    <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                      {t.type}
-                    </span>
+      <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="space-y-4">
+          {visibleTasks.map((task) => {
+            const completed = done[task.id] ?? false;
+            const ready = isReady(task);
+            const completionMeta = completionById[task.id];
+            const autoCompleted = completionMeta?.completed ?? false;
+            const needsManualConfirm = completionMeta?.needsManualConfirm ?? false;
 
-                    {t.focusFirst && (
-                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        focus first
+            return (
+              <div
+                key={task.id}
+                className={`rounded-lg border border-amber-400/20 bg-slate-950/60 p-4 ${
+                  !ready ? "opacity-70" : ""
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    className={`mt-1 h-5 w-5 rounded border border-amber-400/40 ${
+                      completed ? "bg-amber-300/80" : ""
+                    }`}
+                    onClick={() => toggle(task.id, autoCompleted)}
+                    aria-label={`Mark ${task.title} complete`}
+                  />
+
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-medium text-amber-100">{task.title}</h2>
+
+                      <span className="rounded bg-amber-100/10 px-2 py-0.5 text-xs text-amber-100/80">
+                        {task.type}
                       </span>
-                    )}
 
-                    {!ready && (
-                      <span className="rounded border border-slate-300 bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                        🔒 Locked — finish prereqs
-                      </span>
-                    )}
+                      {task.focusFirst && (
+                        <span className="rounded bg-amber-100/10 px-2 py-0.5 text-xs text-amber-100/80">
+                          focus first
+                        </span>
+                      )}
 
-                    {t.completion && (
-                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        auto
-                      </span>
-                    )}
+                      {!ready && (
+                        <span className="rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                          🔒 Locked — finish prereqs
+                        </span>
+                      )}
 
-                    {hasOverride(t.id) && (
-                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        manual override
-                      </span>
-                    )}
+                      {task.completion && (
+                        <span className="rounded bg-amber-100/10 px-2 py-0.5 text-xs text-amber-100/80">
+                          auto
+                        </span>
+                      )}
+
+                      {hasOverride(task.id) && (
+                        <span className="rounded bg-amber-100/10 px-2 py-0.5 text-xs text-amber-100/80">
+                          manual override
+                        </span>
+                      )}
+                    </div>
+
+                    {task.why ? (
+                      <p className="mt-2 text-sm text-amber-100/70">
+                        {task.why}
+                      </p>
+                    ) : null}
+
+                    {task.steps?.length ? (
+                      <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-100/70">
+                        {task.steps.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    {needsManualConfirm && !completed ? (
+                      <button
+                        type="button"
+                        className="mt-3 rounded border border-amber-400/40 px-2 py-1 text-xs text-amber-100"
+                        onClick={() => setManualOverride(task.id, true, autoCompleted)}
+                      >
+                        I have it (manual confirm)
+                      </button>
+                    ) : null}
+
+                    {task.prerequisites?.length ? (
+                      <p className="mt-2 text-xs text-amber-100/60">
+                        Prereqs: {task.prerequisites.join(", ")}
+                      </p>
+                    ) : null}
                   </div>
-                </summary>
-
-                <div className="mt-4 space-y-3">
-                  {stepTasks.map((task) => {
-                    const completed = !!done[task.id];
-                    const ready = isTaskReady(task, done);
-                    const impactScore = getImpactScore(task);
-
-                  {needsManualConfirm && !completed ? (
-                    <button
-                      type="button"
-                      className="mt-2 rounded border px-2 py-1 text-xs"
-                      onClick={() => setManualOverride(t.id, true, autoCompleted)}
-                    >
-                      I have it (manual confirm)
-                    </button>
-                  ) : null}
-
-                  {t.prerequisites?.length ? (
-                    <p className="mt-2 text-xs opacity-70">
-                      Prereqs: {t.prerequisites.join(", ")}
-                    </p>
-                  ) : null}
-
-                  {stepTasks.length === 0 ? (
-                    <p className="text-sm text-amber-100/60">
-                      All tasks complete for this step.
-                    </p>
-                  ) : null}
                 </div>
-              </details>
+              </div>
             );
           })}
         </div>
@@ -619,18 +804,20 @@ export default function Home() {
               Ordered by prerequisite readiness + impact.
             </p>
             <ol className="mt-4 space-y-3 text-sm text-amber-100/80">
-              {nextUp.length ? (
-                nextUp.map((task) => (
+              {nextTasks.length ? (
+                nextTasks.map((task) => (
                   <li key={task.id} className="rounded-md bg-slate-900/80 p-3">
                     <p className="font-semibold text-amber-200">
                       {task.title}
                     </p>
-                    <p className="text-xs text-amber-100/70">{task.how}</p>
+                    {task.why ? (
+                      <p className="text-xs text-amber-100/70">{task.why}</p>
+                    ) : null}
                   </li>
                 ))
               ) : (
                 <li className="text-amber-100/60">
-                  You’re caught up! Toggle “Hide completed” to review.
+                  You’re caught up! Toggle “Show completed” to review.
                 </li>
               )}
             </ol>
