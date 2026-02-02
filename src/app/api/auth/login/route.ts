@@ -5,7 +5,14 @@ import { generateOauthState, getBattlenetConfig } from "@/lib/battlenet";
 const STATE_COOKIE = "wow_oauth_state";
 
 export async function GET(request: Request) {
-  const { clientId, redirectUri, oauthBase } = getBattlenetConfig(request.url);
+  let clientId: string;
+  let redirectUri: string;
+  let oauthBase: string;
+  try {
+    ({ clientId, redirectUri, oauthBase } = getBattlenetConfig(request.url));
+  } catch {
+    return NextResponse.redirect(new URL("/?login=config", request.url));
+  }
   const state = generateOauthState();
   const store = await cookies();
 
@@ -23,7 +30,7 @@ export async function GET(request: Request) {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid",
+    scope: "openid wow.profile",
     state,
   });
 

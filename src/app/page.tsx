@@ -220,6 +220,20 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const syncInFlight = useRef(false);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const loginStatus = params.get("login");
+    if (!loginStatus) return;
+    const messageMap: Record<string, string> = {
+      missing: "Battle.net login was missing required parameters.",
+      state: "Battle.net login expired. Please try again.",
+      token: "Battle.net login failed to exchange the token. Please retry.",
+      config: "Battle.net login is not configured on this environment.",
+    };
+    setProfileError(messageMap[loginStatus] ?? "Battle.net login failed.");
+  }, []);
+
   const setOverridesAndPersist = useCallback(
     (next: Record<string, boolean>) => {
       setManualOverrides(next);
@@ -522,12 +536,14 @@ export default function Home() {
           ) : (
             <div className="space-y-2">
               <p>Battle.net login enables profile-aware features.</p>
-              <a
-                href="/api/auth/login"
-                className="inline-flex items-center justify-center rounded-md bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900"
-              >
-                Log in with Battle.net
-              </a>
+              <form action="/api/auth/login" method="get">
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-md bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900"
+                >
+                  Log in with Battle.net
+                </button>
+              </form>
               {profileError ? (
                 <p className="text-xs text-red-300">{profileError}</p>
               ) : null}
@@ -625,7 +641,10 @@ export default function Home() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+          <label
+            className="flex flex-col gap-1 text-sm text-amber-100/80"
+            title="Paste the Battle.net access token from the developer tools flow so the app can call the Classic profile APIs."
+          >
             Access token
             <input
               className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
@@ -634,7 +653,10 @@ export default function Home() {
               placeholder="Paste your Battle.net access token"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+          <label
+            className="flex flex-col gap-1 text-sm text-amber-100/80"
+            title="Optional identifier to keep API cache and rate limits scoped per user (battle tag or account id)."
+          >
             Token user id (for rate limits)
             <input
               className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
@@ -643,7 +665,10 @@ export default function Home() {
               placeholder="e.g. battle-tag or user id"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+          <label
+            className="flex flex-col gap-1 text-sm text-amber-100/80"
+            title="Choose the Battle.net region where your Classic characters live."
+          >
             Region
             <select
               className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
@@ -662,6 +687,7 @@ export default function Home() {
               className="rounded border border-amber-400/30 px-3 py-1"
               onClick={loadCharacters}
               disabled={!accessToken}
+              title="Fetch the character list for the access token and region above."
             >
               Load characters
             </button>
@@ -670,7 +696,10 @@ export default function Home() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm text-amber-100/80">
+          <label
+            className="flex flex-col gap-1 text-sm text-amber-100/80"
+            title="Pick the Classic character to sync profession, reputation, and dungeon data."
+          >
             Selected character
             <select
               className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
