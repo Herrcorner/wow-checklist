@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import checklist from "@/data/checklist.json";
 
 type Task = {
@@ -13,21 +13,26 @@ type Task = {
   steps?: string[];
 };
 
+type Checklist = {
+  title: string;
+  tasks: Task[];
+};
+
 export default function Home() {
-  const tasks = (checklist as { title: string; tasks: Task[] }).tasks;
+  const { title, tasks } = checklist as Checklist;
 
-  const [done, setDone] = useState<Record<string, boolean>>({});
-  const [showCompleted, setShowCompleted] = useState(false);
-
-  // Load completion state once on client
-  useEffect(() => {
+  // ✅ Load from localStorage without useEffect (fixes react-hooks/set-state-in-effect)
+  const [done, setDone] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
     try {
       const saved = localStorage.getItem("done");
-      if (saved) setDone(JSON.parse(saved));
+      return saved ? (JSON.parse(saved) as Record<string, boolean>) : {};
     } catch {
-      // ignore
+      return {};
     }
-  }, []);
+  });
+
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const setDoneAndPersist = (next: Record<string, boolean>) => {
     setDone(next);
@@ -42,27 +47,29 @@ export default function Home() {
   const isReady = (t: Task) =>
     (t.prerequisites ?? []).every((p) => done[p] === true);
 
-  const visibleTasks = useMemo(() => {
-    const base = showCompleted ? tasks : tasks.filter((t) => !done[t.id]);
+  // ✅ No useMemo => fixes React Compiler preserve-manual-memoization + deps warning
+  const baseTasks = showCompleted ? tasks : tasks.filter((t) => !done[t.id]);
 
-    return [...base].sort((a, b) => {
-      const af = a.focusFirst ? 1 : 0;
-      const bf = b.focusFirst ? 1 : 0;
-      if (af !== bf) return bf - af;
+  const visibleTasks = [...baseTasks].sort((a, b) => {
+    // Focus-first at the top
+    const af = a.focusFirst ? 1 : 0;
+    const bf = b.focusFirst ? 1 : 0;
+    if (af !== bf) return bf - af;
 
-      const ar = isReady(a) ? 1 : 0;
-      const br = isReady(b) ? 1 : 0;
-      if (ar !== br) return br - ar;
+    // Ready tasks before locked tasks
+    const ar = isReady(a) ? 1 : 0;
+    const br = isReady(b) ? 1 : 0;
+    if (ar !== br) return br - ar;
 
-      return a.title.localeCompare(b.title);
-    });
-  }, [tasks, done, showCompleted]);
+    // Stable fallback
+    return a.title.localeCompare(b.title);
+  });
 
   const completedCount = tasks.filter((t) => done[t.id]).length;
 
   return (
     <main className="mx-auto max-w-3xl p-6">
-      <h1 className="text-2xl font-semibold">{checklist.title}</h1>
+      <h1 className="text-2xl font-semibold">{title}</h1>
 
       <div className="mt-2 flex items-center justify-between gap-4">
         <p className="text-sm opacity-80">
@@ -87,12 +94,11 @@ export default function Home() {
           return (
             <div
               key={t.id}
-              className={`rounded-lg border p-4 ${
-                !ready ? "opacity-60" : ""
-              }`}
+              className={`rounded-lg border p-4 ${!ready ? "opacity-60" : ""}`}
             >
               <div className="flex items-start gap-3">
                 <button
+                  type="button"
                   className={`mt-1 h-5 w-5 rounded border ${
                     completed ? "bg-black" : ""
                   }`}
