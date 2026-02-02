@@ -106,14 +106,24 @@ export default function Home() {
           Completed: {completedCount}/{tasks.length}
         </p>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showCompleted}
-            onChange={(e) => setShowCompleted(e.target.checked)}
-          />
-          Show completed
-        </label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showReadyOnly}
+              onChange={(e) => setShowReadyOnly(e.target.checked)}
+            />
+            Show only ready tasks
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showCompleted}
+              onChange={(e) => setShowCompleted(e.target.checked)}
+            />
+            Show completed
+          </label>
+        </div>
       </div>
 
       <div className="mt-6 space-y-4">
@@ -154,8 +164,8 @@ export default function Home() {
                     )}
 
                     {!ready && (
-                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        locked (finish prereqs)
+                      <span className="rounded border border-slate-300 bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                        🔒 Locked — finish prereqs
                       </span>
                     )}
 
