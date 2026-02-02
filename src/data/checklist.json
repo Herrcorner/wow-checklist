@@ -6,8 +6,13 @@
       "title": "Get Thrallmar / Honor Hold to Revered",
       "type": "reputation",
       "focusFirst": true,
-      "unlockValue": 3,
-      "powerGain": 1,
+      "completion": {
+        "type": "rep_at_least_any",
+        "options": [
+          { "factionId": "thrallmar", "standing": "revered" },
+          { "factionId": "honor_hold", "standing": "revered" }
+        ]
+      },
       "why": "Unlock key rep rewards and heroic key progression.",
       "steps": [
         "Run Hellfire Ramparts / Blood Furnace / Shattered Halls",
@@ -20,8 +25,11 @@
       "title": "Get Cenarion Expedition to Exalted",
       "type": "reputation",
       "focusFirst": true,
-      "unlockValue": 3,
-      "powerGain": 2,
+      "completion": {
+        "type": "rep_at_least",
+        "factionId": "cenarion_expedition",
+        "standing": "exalted"
+      },
       "why": "Exalted gives Windcaller’s Orb (strong off-hand).",
       "steps": [
         "Run Slave Pens / Underbog / Steamvaults",
@@ -35,6 +43,10 @@
       "type": "dungeon",
       "powerGain": 4,
       "prerequisites": ["rep-thrallmar-honhold-revered"],
+      "completion": {
+        "type": "item_owned",
+        "itemId": "shockwave_truncheon"
+      },
       "why": "Great pre-raid healer weapon.",
       "steps": [
         "Get the Heroic key (Revered)",
