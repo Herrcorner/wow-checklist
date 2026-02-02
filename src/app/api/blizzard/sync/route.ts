@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { BlizzardApiError, getCached } from "@/lib/blizzardClient";
+import { getSession } from "@/lib/session";
 
 type EquipmentResponse = {
   equipped_items?: Array<{ item?: { name?: string } }>;
@@ -24,8 +25,12 @@ type SyncRequest = {
 };
 
 export async function POST(request: NextRequest) {
-  const accessToken = getBearerToken(request);
-  const tokenUserId = request.headers.get("x-token-user-id") ?? "anonymous";
+  const session = await getSession();
+  const accessToken = session?.accessToken;
+  const tokenUserId =
+    request.headers.get("x-token-user-id") ??
+    session?.battletag ??
+    "anonymous";
 
   if (!accessToken) {
     return NextResponse.json(
@@ -36,7 +41,8 @@ export async function POST(request: NextRequest) {
 
   const payload = (await request.json()) as SyncRequest;
 
-  const region = payload.region ?? "us";
+  const region =
+    payload.region ?? process.env.BATTLENET_REGION ?? "eu";
   const locale = payload.locale ?? "en_US";
   const namespace = payload.namespace ?? "profile-classic1";
   const realmSlug = payload.realmSlug;
@@ -142,11 +148,4 @@ async function safeFetch<T>(
     errors.push({ endpoint: endpointName, message: "Unknown error" });
     return null;
   }
-}
-
-function getBearerToken(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return "";
-  const [, token] = authHeader.split("Bearer ");
-  return token?.trim() ?? "";
 }

@@ -11,7 +11,10 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
 
   if (!code || !state) {
-    return NextResponse.redirect(new URL("/?login=missing", request.url));
+    return NextResponse.json(
+      { error: "Missing OAuth code or state." },
+      { status: 400 },
+    );
   }
 
   const store = await cookies();
@@ -27,11 +30,27 @@ export async function GET(request: Request) {
   });
 
   if (!savedState || savedState !== state) {
-    return NextResponse.redirect(new URL("/?login=state", request.url));
+    return NextResponse.json(
+      { error: "OAuth state mismatch. Please retry login." },
+      { status: 400 },
+    );
   }
 
-  const { clientId, clientSecret, redirectUri, oauthBase } =
-    getBattlenetConfig(request.url);
+  let clientId: string;
+  let clientSecret: string;
+  let redirectUri: string;
+  let oauthBase: string;
+
+  try {
+    ({ clientId, clientSecret, redirectUri, oauthBase } =
+      getBattlenetConfig(request.url));
+  } catch (error) {
+    console.error("Battle.net OAuth config error", error);
+    return NextResponse.json(
+      { error: "Battle.net login is not configured." },
+      { status: 500 },
+    );
+  }
 
   const tokenResponse = await fetch(`${oauthBase}/token`, {
     method: "POST",
@@ -49,7 +68,12 @@ export async function GET(request: Request) {
   });
 
   if (!tokenResponse.ok) {
-    return NextResponse.redirect(new URL("/?login=token", request.url));
+    const errorBody = await tokenResponse.text();
+    console.error("Battle.net token exchange failed", errorBody);
+    return NextResponse.json(
+      { error: "Battle.net login failed. Please retry." },
+      { status: 502 },
+    );
   }
 
   const tokenJson = (await tokenResponse.json()) as {
@@ -77,5 +101,5 @@ export async function GET(request: Request) {
     battletag: userInfo?.battletag,
   });
 
-  return NextResponse.redirect(new URL("/?login=success", request.url));
+  return NextResponse.redirect(new URL("/", request.url));
 }

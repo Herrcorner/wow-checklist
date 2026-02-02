@@ -20,6 +20,32 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Battle.net Login Setup
+
+**Redirect URI**
+
+Configure the Blizzard OAuth app with this exact redirect URI:
+
+```
+{APP_BASE_URL}/api/auth/battlenet/callback
+```
+
+Local development redirect URI:
+
+```
+http://localhost:3000/api/auth/battlenet/callback
+```
+
+**Vercel Environment Variables**
+
+Set these environment variables in Vercel (and locally via `.env.local`):
+
+- `BATTLENET_CLIENT_ID`
+- `BATTLENET_CLIENT_SECRET`
+- `BATTLENET_REGION` (example: `eu`)
+- `APP_BASE_URL` (example: `https://your-vercel-app.vercel.app`)
+- `SESSION_SECRET` (long random string)
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

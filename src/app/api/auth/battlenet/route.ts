@@ -8,11 +8,17 @@ export async function GET(request: Request) {
   let clientId: string;
   let redirectUri: string;
   let oauthBase: string;
+
   try {
     ({ clientId, redirectUri, oauthBase } = getBattlenetConfig(request.url));
-  } catch {
-    return NextResponse.redirect(new URL("/?login=config", request.url));
+  } catch (error) {
+    console.error("Battle.net OAuth config error", error);
+    return NextResponse.json(
+      { error: "Battle.net login is not configured." },
+      { status: 500 },
+    );
   }
+
   const state = generateOauthState();
   const store = await cookies();
 
@@ -30,7 +36,7 @@ export async function GET(request: Request) {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid wow.profile",
+    scope: "openid",
     state,
   });
 

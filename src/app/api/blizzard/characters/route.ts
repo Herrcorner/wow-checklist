@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { BlizzardApiError, getCached } from "@/lib/blizzardClient";
+import { getSession } from "@/lib/session";
 
 type BlizzardCharacter = {
   id?: number;
@@ -16,12 +17,17 @@ type BlizzardAccountProfile = {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const region = searchParams.get("region") ?? "us";
+  const region =
+    searchParams.get("region") ?? process.env.BATTLENET_REGION ?? "eu";
   const locale = searchParams.get("locale") ?? "en_US";
   const namespace = searchParams.get("namespace") ?? "profile-classic1";
 
-  const accessToken = getBearerToken(request);
-  const tokenUserId = request.headers.get("x-token-user-id") ?? "anonymous";
+  const session = await getSession();
+  const accessToken = session?.accessToken;
+  const tokenUserId =
+    request.headers.get("x-token-user-id") ??
+    session?.battletag ??
+    "anonymous";
 
   if (!accessToken) {
     return NextResponse.json(
@@ -60,11 +66,4 @@ export async function GET(request: NextRequest) {
       { status },
     );
   }
-}
-
-function getBearerToken(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return "";
-  const [, token] = authHeader.split("Bearer ");
-  return token?.trim() ?? "";
 }

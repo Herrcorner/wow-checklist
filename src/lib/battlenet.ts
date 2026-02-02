@@ -1,9 +1,7 @@
 import crypto from "crypto";
 
-const defaultOauthBase = "https://oauth.battle.net";
-
 const getBaseUrl = (requestUrl: string) => {
-  const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  const envBase = process.env.APP_BASE_URL;
   if (envBase) return envBase.replace(/\/+$/, "");
   const url = new URL(requestUrl);
   return `${url.protocol}//${url.host}`;
@@ -16,16 +14,16 @@ export const getBattlenetConfig = (requestUrl: string) => {
     throw new Error("Missing Battle.net OAuth env vars.");
   }
 
+  const region = process.env.BATTLENET_REGION || "eu";
   const baseUrl = getBaseUrl(requestUrl);
-  const redirectUri =
-    process.env.BATTLENET_REDIRECT_URI ||
-    `${baseUrl}/api/auth/callback`;
+  const redirectUri = `${baseUrl}/api/auth/battlenet/callback`;
 
   return {
     clientId,
     clientSecret,
     redirectUri,
-    oauthBase: process.env.BATTLENET_OAUTH_BASE || defaultOauthBase,
+    region,
+    oauthBase: `https://${region}.battle.net/oauth`,
   };
 };
 

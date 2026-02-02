@@ -209,9 +209,8 @@ export default function Home() {
   const [showReadyOnly, setShowReadyOnly] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
 
-  const [accessToken, setAccessToken] = useState("");
   const [tokenUserId, setTokenUserId] = useState("");
-  const [region, setRegion] = useState("us");
+  const [region, setRegion] = useState("eu");
   const [characters, setCharacters] = useState<CharacterSummary[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [syncStatus, setSyncStatus] = useState("Not synced");
@@ -219,20 +218,6 @@ export default function Home() {
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const syncInFlight = useRef(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const loginStatus = params.get("login");
-    if (!loginStatus) return;
-    const messageMap: Record<string, string> = {
-      missing: "Battle.net login was missing required parameters.",
-      state: "Battle.net login expired. Please try again.",
-      token: "Battle.net login failed to exchange the token. Please retry.",
-      config: "Battle.net login is not configured on this environment.",
-    };
-    setProfileError(messageMap[loginStatus] ?? "Battle.net login failed.");
-  }, []);
 
   const setOverridesAndPersist = useCallback(
     (next: Record<string, boolean>) => {
@@ -332,22 +317,15 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const savedToken = localStorage.getItem("blizzardAccessToken");
     const savedUserId = localStorage.getItem("blizzardTokenUserId");
     const savedRegion = localStorage.getItem("blizzardRegion");
     const savedCharacterId = localStorage.getItem("blizzardCharacterId");
     const savedLastSync = localStorage.getItem("blizzardLastSync");
-    if (savedToken) setAccessToken(savedToken);
     if (savedUserId) setTokenUserId(savedUserId);
     if (savedRegion) setRegion(savedRegion);
     if (savedCharacterId) setSelectedCharacterId(savedCharacterId);
     if (savedLastSync) setLastSync(Number(savedLastSync));
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("blizzardAccessToken", accessToken);
-  }, [accessToken]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -375,18 +353,24 @@ export default function Home() {
     let active = true;
     const loadProfile = async () => {
       try {
-        const response = await fetch("/api/profile");
+        const response = await fetch("/api/auth/me");
         if (!response.ok) {
-          if (response.status !== 401) {
-            setProfileError("Unable to load profile.");
-          }
+          setProfileError("Unable to load profile.");
           return;
         }
-        const payload = (await response.json()) as Profile;
+        const payload = (await response.json()) as {
+          authenticated: boolean;
+          battletag?: string | null;
+        };
         if (!active) return;
-        setProfile(payload);
-        if (payload.battletag && !tokenUserId) {
-          setTokenUserId(payload.battletag);
+        if (!payload.authenticated) {
+          setProfile(null);
+          return;
+        }
+        const nextProfile = { battletag: payload.battletag ?? undefined };
+        setProfile(nextProfile);
+        if (nextProfile.battletag && !tokenUserId) {
+          setTokenUserId(nextProfile.battletag);
         }
       } catch {
         if (active) setProfileError("Unable to load profile.");
@@ -400,7 +384,7 @@ export default function Home() {
 
   const runSync = useCallback(
     async (trigger: "manual" | "scheduled") => {
-      if (!accessToken || !selectedCharacter) return;
+      if (!profile || !selectedCharacter) return;
       if (syncInFlight.current) return;
 
       syncInFlight.current = true;
@@ -413,7 +397,6 @@ export default function Home() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
             "x-token-user-id": tokenUserId,
           },
           body: JSON.stringify({
@@ -454,8 +437,8 @@ export default function Home() {
       }
     },
     [
-      accessToken,
       manualOverrides,
+      profile,
       region,
       selectedCharacter,
       setOverridesAndPersist,
@@ -465,22 +448,21 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (!accessToken || !selectedCharacter) return;
+    if (!profile || !selectedCharacter) return;
     if (!lastSync) return;
     const elapsedMs = Date.now() - lastSync;
     if (elapsedMs < SYNC_INTERVAL_HOURS * 60 * 60 * 1000) return;
     void runSync("scheduled");
-  }, [accessToken, lastSync, runSync, selectedCharacter]);
+  }, [lastSync, profile, runSync, selectedCharacter]);
 
   const loadCharacters = useCallback(async () => {
-    if (!accessToken) return;
+    if (!profile) return;
     setSyncStatus("Loading characters…");
     try {
       const response = await fetch(
         `/api/blizzard/characters?region=${region}&locale=en_US&namespace=profile-classic1`,
         {
           headers: {
-            Authorization: `Bearer ${accessToken}`,
             "x-token-user-id": tokenUserId,
           },
         },
@@ -500,7 +482,7 @@ export default function Home() {
     } catch {
       setSyncStatus("Character load failed");
     }
-  }, [accessToken, region, selectedCharacterId, tokenUserId]);
+  }, [profile, region, selectedCharacterId, tokenUserId]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -536,12 +518,12 @@ export default function Home() {
           ) : (
             <div className="space-y-2">
               <p>Battle.net login enables profile-aware features.</p>
-              <form action="/api/auth/login" method="get">
+              <form action="/api/auth/battlenet" method="get">
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-md bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900"
                 >
-                  Log in with Battle.net
+                  Login with Battle.net
                 </button>
               </form>
               {profileError ? (
@@ -627,32 +609,20 @@ export default function Home() {
           <div>
             <h2 className="text-lg font-semibold text-amber-100">Blizzard Sync</h2>
             <p className="text-sm text-amber-100/70">
-              Paste a Battle.net access token to sync Classic character data.
+              Sync Classic character data using your Battle.net login session.
             </p>
           </div>
           <button
             type="button"
             className="rounded border border-amber-400/30 px-3 py-1 text-sm text-amber-100"
             onClick={() => runSync("manual")}
-            disabled={syncing || !accessToken || !selectedCharacter}
+            disabled={syncing || !profile || !selectedCharacter}
           >
             {syncing ? "Syncing…" : "Sync now"}
           </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label
-            className="flex flex-col gap-1 text-sm text-amber-100/80"
-            title="Paste the Battle.net access token from the developer tools flow so the app can call the Classic profile APIs."
-          >
-            Access token
-            <input
-              className="rounded border border-amber-400/30 bg-slate-950/80 px-2 py-1 text-amber-100"
-              value={accessToken}
-              onChange={(event) => setAccessToken(event.target.value)}
-              placeholder="Paste your Battle.net access token"
-            />
-          </label>
           <label
             className="flex flex-col gap-1 text-sm text-amber-100/80"
             title="Optional identifier to keep API cache and rate limits scoped per user (battle tag or account id)."
@@ -686,8 +656,8 @@ export default function Home() {
               type="button"
               className="rounded border border-amber-400/30 px-3 py-1"
               onClick={loadCharacters}
-              disabled={!accessToken}
-              title="Fetch the character list for the access token and region above."
+              disabled={!profile}
+              title="Fetch the character list for the logged-in account and region above."
             >
               Load characters
             </button>
