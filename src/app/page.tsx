@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import checklist from "@/data/checklist.json";
+import characterSnapshot from "@/data/character-snapshot.json";
+import { evaluateCompletionRule } from "@/lib/completion";
+import { CompletionRule } from "@/guide/types";
 
 type Task = {
   id: string;
@@ -11,6 +14,9 @@ type Task = {
   why?: string;
   prerequisites?: string[];
   steps?: string[];
+  unlockValue?: number;
+  timeGated?: boolean;
+  powerGain?: number;
 };
 
 type Checklist = {
@@ -18,168 +24,202 @@ type Checklist = {
   tasks: Task[];
 };
 
-type CharacterSummary = {
-  id?: number;
-  name: string;
-  level?: number;
-  realm: string;
-  realmSlug: string;
-  playableClass?: string;
+const scoreTask = (task: Task) => {
+  const unlockValue = task.unlockValue ?? 0;
+  const powerGain = task.powerGain ?? 0;
+  const timeGated = task.timeGated ? 2 : 0;
+
+  return unlockValue + powerGain + timeGated;
 };
 
-type ReputationEntry = {
-  name: string;
-  standingName: string;
-  standingTier: number;
-};
+const getTopologicalOrder = (tasks: Task[], done: Record<string, boolean>) => {
+  const remaining = tasks.filter((task) => !done[task.id]);
+  const taskMap = new Map(remaining.map((task) => [task.id, task]));
+  const indegree = new Map<string, number>();
+  const edges = new Map<string, string[]>();
 
-type SyncResponse = {
-  equipmentItems: string[];
-  reputations: ReputationEntry[];
-  pvpSummary: Record<string, unknown> | null;
-  errors: Array<{ endpoint: string; status?: number; message: string }>;
-};
+  remaining.forEach((task) => {
+    indegree.set(task.id, 0);
+    edges.set(task.id, []);
+  });
 
-const STANDING_NAME_TO_TIER: Record<string, number> = {
-  hated: 1,
-  hostile: 2,
-  unfriendly: 3,
-  neutral: 4,
-  friendly: 5,
-  honored: 6,
-  revered: 7,
-  exalted: 8,
-};
+  remaining.forEach((task) => {
+    (task.prerequisites ?? []).forEach((prereq) => {
+      if (!taskMap.has(prereq)) return;
 
-const SYNC_INTERVAL_HOURS = 6;
+      const current = indegree.get(task.id) ?? 0;
+      indegree.set(task.id, current + 1);
+      edges.get(prereq)?.push(task.id);
+    });
+  });
 
-const getStoredValue = (key: string, fallback = "") => {
-  if (typeof window === "undefined") return fallback;
-  const saved = localStorage.getItem(key);
-  return saved ?? fallback;
-};
-
-const normalize = (value: string) => value.trim().toLowerCase();
-
-const parseRepRequirement = (title: string) => {
-  const match = title.match(
-    /(get|reach)\s+(.+?)\s+to\s+(friendly|honored|revered|exalted)/i,
+  const ordered: Task[] = [];
+  const ready: Task[] = remaining.filter(
+    (task) => (indegree.get(task.id) ?? 0) === 0,
   );
-  if (!match) return null;
-  const factionPart = match[2] ?? "";
-  const requirement = match[3] ?? "";
-  const factions = factionPart
-    .split("/")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  const requiredTier = STANDING_NAME_TO_TIER[normalize(requirement)] ?? 0;
-  return { factions, requiredTier };
-};
 
-const buildReputationMap = (reputations: ReputationEntry[]) => {
-  const map = new Map<string, number>();
-  reputations.forEach((rep) => {
-    const tier =
-      rep.standingTier ||
-      STANDING_NAME_TO_TIER[normalize(rep.standingName)] ||
-      0;
-    map.set(normalize(rep.name), tier);
-  });
-  return map;
-};
+  const sortReady = () =>
+    ready.sort((a, b) => {
+      const scoreDiff = scoreTask(b) - scoreTask(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.title.localeCompare(b.title);
+    });
 
-const shouldCompleteRepTask = (
-  task: Task,
-  reputations: ReputationEntry[],
-) => {
-  if (task.type !== "reputation") return false;
-  const requirement = parseRepRequirement(task.title);
-  if (!requirement) return false;
-  const repMap = buildReputationMap(reputations);
-  return requirement.factions.some((faction) => {
-    const tier = repMap.get(normalize(faction)) ?? 0;
-    return tier >= requirement.requiredTier;
-  });
-};
+  while (ready.length > 0) {
+    sortReady();
+    const current = ready.shift();
+    if (!current) break;
 
-const shouldCompleteEquipmentTask = (
-  task: Task,
-  equipmentItems: string[],
-) => {
-  if (task.type === "reputation") return false;
-  const title = normalize(task.title);
-  return equipmentItems.some((item) => title.includes(normalize(item)));
+    ordered.push(current);
+
+    edges.get(current.id)?.forEach((neighborId) => {
+      const nextValue = (indegree.get(neighborId) ?? 0) - 1;
+      indegree.set(neighborId, nextValue);
+      if (nextValue === 0) {
+        const neighbor = taskMap.get(neighborId);
+        if (neighbor) ready.push(neighbor);
+      }
+    });
+  }
+
+  if (ordered.length !== remaining.length) {
+    const fallback = remaining
+      .filter((task) => !ordered.find((orderedTask) => orderedTask.id === task.id))
+      .sort((a, b) => {
+        const scoreDiff = scoreTask(b) - scoreTask(a);
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.title.localeCompare(b.title);
+      });
+
+    ordered.push(...fallback);
+  }
+
+  return ordered;
 };
 
 export default function Home() {
-  const { title, tasks } = checklist as Checklist;
+  const { title, steps } = checklist as Checklist;
+  const allTasks = getAllTasks(steps);
 
   // ✅ Load from localStorage without useEffect (fixes react-hooks/set-state-in-effect)
-  const [done, setDone] = useState<Record<string, boolean>>(() => {
+  const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
-      const saved = localStorage.getItem("done");
+      const saved = localStorage.getItem("wow-checklist-done");
       return saved ? (JSON.parse(saved) as Record<string, boolean>) : {};
     } catch {
       return {};
     }
   });
 
-  const [showCompleted, setShowCompleted] = useState(false);
-  const [accessToken, setAccessToken] = useState(() =>
-    getStoredValue("blizzardAccessToken"),
-  );
-  const [tokenUserId, setTokenUserId] = useState(() =>
-    getStoredValue("blizzardTokenUserId"),
-  );
-  const [region, setRegion] = useState(() =>
-    getStoredValue("blizzardRegion", "us"),
-  );
-  const [characters, setCharacters] = useState<CharacterSummary[]>([]);
-  const [selectedCharacterId, setSelectedCharacterId] = useState(() =>
-    getStoredValue("blizzardCharacterId"),
-  );
-  const [lastSync, setLastSync] = useState(() => {
-    const saved = getStoredValue("blizzardLastSync");
-    return saved ? Number(saved) : null;
-  });
-  const [syncStatus, setSyncStatus] = useState("Idle");
-  const [syncErrors, setSyncErrors] = useState<SyncResponse["errors"]>([]);
-  const [syncing, setSyncing] = useState(false);
-  const syncInFlight = useRef(false);
+  const [hideCompleted, setHideCompleted] = useState(false);
 
-  const setDoneAndPersist = useCallback((next: Record<string, boolean>) => {
-    setDone(next);
+  const setOverridesAndPersist = (next: Record<string, boolean>) => {
+    setManualOverrides(next);
     localStorage.setItem("done", JSON.stringify(next));
   }, []);
 
-  const toggle = (id: string) => {
-    const next = { ...done, [id]: !done[id] };
-    setDoneAndPersist(next);
+  const hasOverride = (id: string) =>
+    Object.prototype.hasOwnProperty.call(manualOverrides, id);
+
+  const setManualOverride = (id: string, value: boolean, autoCompleted: boolean) => {
+    const next = { ...manualOverrides };
+    if (value === autoCompleted) {
+      delete next[id];
+    } else {
+      next[id] = value;
+    }
+    setOverridesAndPersist(next);
+  };
+
+  const toggle = (id: string, autoCompleted: boolean) => {
+    const current = hasOverride(id) ? manualOverrides[id] : autoCompleted;
+    setManualOverride(id, !current, autoCompleted);
+  };
+
+  const completionById = tasks.reduce(
+    (acc, task) => {
+      acc[task.id] = evaluateCompletionRule(task.completion, characterSnapshot);
+      return acc;
+    },
+    {} as Record<string, ReturnType<typeof evaluateCompletionRule>>,
+  );
+
+  const isCompleted = (taskId: string) => {
+    const autoCompleted = completionById[taskId]?.completed ?? false;
+    return hasOverride(taskId) ? manualOverrides[taskId] : autoCompleted;
   };
 
   const isReady = (t: Task) =>
-    (t.prerequisites ?? []).every((p) => done[p] === true);
+    (t.prerequisites ?? []).every((p) => isCompleted(p) === true);
 
   // ✅ No useMemo => fixes React Compiler preserve-manual-memoization + deps warning
-  const baseTasks = showCompleted ? tasks : tasks.filter((t) => !done[t.id]);
+  const baseTasks = hideCompleted ? tasks.filter((t) => !done[t.id]) : tasks;
 
-  const visibleTasks = [...baseTasks].sort((a, b) => {
-    // Focus-first at the top
-    const af = a.focusFirst ? 1 : 0;
-    const bf = b.focusFirst ? 1 : 0;
-    if (af !== bf) return bf - af;
+  return (
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <div className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <p className="text-sm uppercase tracking-widest text-amber-300/70">
+            The Burning Crusade Checklist
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold text-amber-100">
+            {title}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm text-amber-100/70">
+            Manual tracking until auto-sync arrives. Check tasks, follow the
+            “next up” focus list, and hide what’s already done.
+          </p>
+        </div>
 
-    // Ready tasks before locked tasks
-    const ar = isReady(a) ? 1 : 0;
-    const br = isReady(b) ? 1 : 0;
-    if (ar !== br) return br - ar;
+        <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 px-4 py-3 text-sm text-amber-100/80">
+          {profile ? (
+            <div className="space-y-2">
+              <p className="font-semibold text-amber-200">
+                Logged in as {profile.battletag ?? "Adventurer"}
+              </p>
+              <form action="/api/auth/logout" method="post">
+                <button
+                  type="submit"
+                  className="rounded-md border border-amber-300/40 px-3 py-1 text-xs uppercase tracking-wide text-amber-100"
+                >
+                  Log out
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p>Battle.net login enables profile-aware features.</p>
+              <a
+                href="/api/auth/login"
+                className="inline-flex items-center justify-center rounded-md bg-amber-400/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900"
+              >
+                Log in with Battle.net
+              </a>
+              {profileError ? (
+                <p className="text-xs text-red-300">{profileError}</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
 
-    // Stable fallback
-    return a.title.localeCompare(b.title);
-  });
+      <section className="mt-8 rounded-xl border border-amber-500/30 bg-slate-900/70 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-amber-100/70">
+              Overall completion: {completedCount}/{allTasks.length}
+            </p>
+            <div className="mt-2 h-2 w-64 overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-amber-400"
+                style={{ width: `${overallPercent}%` }}
+              />
+            </div>
+          </div>
 
   const completedCount = tasks.filter((t) => done[t.id]).length;
+  const nextTasks = getTopologicalOrder(tasks, done).slice(0, 5);
 
   const selectedCharacter = characters.find(
     (character) => String(character.id ?? "") === selectedCharacterId,
@@ -424,20 +464,69 @@ export default function Home() {
           Completed: {completedCount}/{tasks.length}
         </p>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showCompleted}
-            onChange={(e) => setShowCompleted(e.target.checked)}
-          />
-          Show completed
-        </label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showReadyOnly}
+              onChange={(e) => setShowReadyOnly(e.target.checked)}
+            />
+            Show only ready tasks
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showCompleted}
+              onChange={(e) => setShowCompleted(e.target.checked)}
+            />
+            Show completed
+          </label>
+        </div>
       </div>
+
+      <section className="mt-6 rounded-lg border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-medium">Next 5 tasks</h2>
+          <p className="text-xs opacity-70">
+            Sorted by prerequisites + unlock, time-gating, and power gain.
+          </p>
+        </div>
+        <ul className="mt-3 space-y-3">
+          {nextTasks.map((task) => {
+            const ready = isReady(task);
+            const score = scoreTask(task);
+
+            return (
+              <li
+                key={task.id}
+                className="rounded-md border border-dashed px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={ready ? "" : "opacity-60"}>
+                    {task.title}
+                  </span>
+                  <span className="text-xs uppercase tracking-wide opacity-60">
+                    score {score}
+                  </span>
+                </div>
+                {!ready && (
+                  <p className="mt-1 text-xs opacity-60">
+                    Locked until prerequisites are completed.
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       <div className="mt-6 space-y-4">
         {visibleTasks.map((t) => {
-          const completed = !!done[t.id];
+          const completed = isCompleted(t.id);
           const ready = isReady(t);
+          const completionMeta = completionById[t.id];
+          const autoCompleted = completionMeta?.completed ?? false;
+          const needsManualConfirm = completionMeta?.needsManualConfirm ?? false;
 
           return (
             <div
@@ -450,7 +539,7 @@ export default function Home() {
                   className={`mt-1 h-5 w-5 rounded border ${
                     completed ? "bg-black" : ""
                   }`}
-                  onClick={() => toggle(t.id)}
+                  onClick={() => toggle(t.id, autoCompleted)}
                   aria-label={`Mark ${t.title} complete`}
                 />
 
@@ -469,13 +558,40 @@ export default function Home() {
                     )}
 
                     {!ready && (
+                      <span className="rounded border border-slate-300 bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                        🔒 Locked — finish prereqs
+                      </span>
+                    )}
+
+                    {t.completion && (
                       <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        locked (finish prereqs)
+                        auto
+                      </span>
+                    )}
+
+                    {hasOverride(t.id) && (
+                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
+                        manual override
                       </span>
                     )}
                   </div>
+                </summary>
 
-                  {t.why && <p className="mt-1 text-sm opacity-80">{t.why}</p>}
+                <div className="mt-4 space-y-3">
+                  {stepTasks.map((task) => {
+                    const completed = !!done[task.id];
+                    const ready = isTaskReady(task, done);
+                    const impactScore = getImpactScore(task);
+
+                  {needsManualConfirm && !completed ? (
+                    <button
+                      type="button"
+                      className="mt-2 rounded border px-2 py-1 text-xs"
+                      onClick={() => setManualOverride(t.id, true, autoCompleted)}
+                    >
+                      I have it (manual confirm)
+                    </button>
+                  ) : null}
 
                   {t.prerequisites?.length ? (
                     <p className="mt-2 text-xs opacity-70">
@@ -483,19 +599,55 @@ export default function Home() {
                     </p>
                   ) : null}
 
-                  {t.steps?.length ? (
-                    <ul className="mt-2 list-disc pl-5 text-sm">
-                      {t.steps.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ul>
+                  {stepTasks.length === 0 ? (
+                    <p className="text-sm text-amber-100/60">
+                      All tasks complete for this step.
+                    </p>
                   ) : null}
                 </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </details>
+            );
+          })}
+        </div>
+
+        <aside className="space-y-4">
+          <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 p-4">
+            <h2 className="text-lg font-semibold text-amber-100">
+              Next up (Top 5)
+            </h2>
+            <p className="mt-1 text-xs text-amber-100/70">
+              Ordered by prerequisite readiness + impact.
+            </p>
+            <ol className="mt-4 space-y-3 text-sm text-amber-100/80">
+              {nextUp.length ? (
+                nextUp.map((task) => (
+                  <li key={task.id} className="rounded-md bg-slate-900/80 p-3">
+                    <p className="font-semibold text-amber-200">
+                      {task.title}
+                    </p>
+                    <p className="text-xs text-amber-100/70">{task.how}</p>
+                  </li>
+                ))
+              ) : (
+                <li className="text-amber-100/60">
+                  You’re caught up! Toggle “Hide completed” to review.
+                </li>
+              )}
+            </ol>
+          </div>
+
+          <div className="rounded-xl border border-amber-400/30 bg-slate-950/70 p-4 text-xs text-amber-100/70">
+            <p className="font-semibold text-amber-200">
+              Focus logic (manual)
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-4">
+              <li>Big upgrades score highest (e.g., trinkets, set bonuses).</li>
+              <li>Unlocks push future content (heroics, attunements).</li>
+              <li>Time gates help you plan weekly lockouts.</li>
+            </ul>
+          </div>
+        </aside>
+      </section>
     </main>
   );
 }
