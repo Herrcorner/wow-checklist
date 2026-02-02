@@ -1,0 +1,525 @@
+{
+  "version": "1.0.0",
+  "game": "wow_tbc",
+  "patch": "2.5.5",
+  "phase": 1,
+  "spec": "priest_holy_pve",
+  "meta": {
+    "title": "Holy Priest PvE Progression (Phase 1)",
+    "description": "Step-by-step checklist for Pre-Raid BiS -> Kara/Gruul/Mag with recommended priorities and dependencies.",
+    "authoring": {
+      "source": "chat_baseline",
+      "lastUpdated": "2026-02-02"
+    }
+  },
+
+  "glossary": {
+    "currencies": {
+      "badge_of_justice": { "name": "Badge of Justice" }
+    },
+    "factions": {
+      "cenarion_expedition": { "name": "Cenarion Expedition" },
+      "keepers_of_time": { "name": "Keepers of Time" },
+      "honor_hold": { "name": "Honor Hold" },
+      "thrallmar": { "name": "Thrallmar" },
+      "violet_eye": { "name": "The Violet Eye" }
+    },
+    "instances": {
+      "auch_crypts": { "name": "Auchenai Crypts" },
+      "shadow_lab": { "name": "Shadow Labyrinth" },
+      "steamvault": { "name": "The Steamvault" },
+      "underbog": { "name": "The Underbog" },
+      "black_morass": { "name": "The Black Morass" },
+      "blood_furnace": { "name": "The Blood Furnace" },
+      "karazhan": { "name": "Karazhan" },
+      "gruuls_lair": { "name": "Gruul's Lair" },
+      "magtheridons_lair": { "name": "Magtheridon's Lair" }
+    },
+    "bosses": {
+      "maladaar": { "name": "Exarch Maladaar", "instanceId": "auch_crypts" },
+      "hellmaw": { "name": "Ambassador Hellmaw", "instanceId": "shadow_lab" },
+      "murmur": { "name": "Murmur", "instanceId": "shadow_lab" },
+      "kalithresh": { "name": "Warlord Kalithresh", "instanceId": "steamvault" },
+      "black_stalker": { "name": "The Black Stalker", "instanceId": "underbog" },
+      "aeonus": { "name": "Aeonus", "instanceId": "black_morass" },
+      "broggok": { "name": "Broggok", "instanceId": "blood_furnace" },
+
+      "attumen": { "name": "Attumen the Huntsman", "instanceId": "karazhan" },
+      "maiden": { "name": "Maiden of Virtue", "instanceId": "karazhan" },
+      "aran": { "name": "Shade of Aran", "instanceId": "karazhan" },
+      "netherspite": { "name": "Netherspite", "instanceId": "karazhan" },
+      "prince": { "name": "Prince Malchezaar", "instanceId": "karazhan" },
+
+      "gruul": { "name": "Gruul the Dragonkiller", "instanceId": "gruuls_lair" },
+      "magtheridon": { "name": "Magtheridon", "instanceId": "magtheridons_lair" }
+    }
+  },
+
+  "items": {
+    "32084": {
+      "name": "Cowl of Naaru Blessings",
+      "slot": "head",
+      "source": { "type": "currency_vendor", "currencyId": "badge_of_justice", "cost": 50, "location": "Shattrath" }
+    },
+    "29376": {
+      "name": "Essence of the Martyr",
+      "slot": "trinket",
+      "source": { "type": "currency_vendor", "currencyId": "badge_of_justice", "cost": 41, "location": "Shattrath" }
+    },
+    "28174": {
+      "name": "Bindings of the Timewalker",
+      "slot": "wrists",
+      "source": { "type": "reputation_vendor", "factionId": "keepers_of_time", "standing": "exalted" }
+    },
+    "28213": {
+      "name": "Windcaller's Orb",
+      "slot": "off_hand",
+      "source": { "type": "reputation_vendor", "factionId": "cenarion_expedition", "standing": "exalted" }
+    },
+    "29373": {
+      "name": "Ancestral Band",
+      "slot": "ring",
+      "source": { "type": "reputation_vendor", "factionId": "thrallmar", "standing": "revered", "altFactionId": "honor_hold" }
+    },
+    "29354": {
+      "name": "Light-Touched Stole of Altruism",
+      "slot": "back",
+      "source": { "type": "boss_drop", "bossId": "maladaar", "mode": "heroic" }
+    },
+    "27451": {
+      "name": "Slippers of Serenity",
+      "slot": "feet",
+      "source": { "type": "boss_drop", "bossId": "maladaar", "mode": "normal" }
+    },
+    "29353": {
+      "name": "Shockwave Truncheon",
+      "slot": "weapon_1h",
+      "source": { "type": "boss_drop", "bossId": "murmur", "mode": "heroic" }
+    },
+    "27885": {
+      "name": "Soul-Wand of the Aldor",
+      "slot": "wand",
+      "source": { "type": "boss_drop", "bossId": "hellmaw", "mode": "normal" }
+    },
+    "30543": {
+      "name": "Pontifex Kilt",
+      "slot": "legs",
+      "source": { "type": "boss_drop", "bossId": "kalithresh", "mode": "heroic" }
+    },
+    "27780": {
+      "name": "Ring of Fabled Hope",
+      "slot": "ring",
+      "source": { "type": "boss_drop", "bossId": "black_stalker", "mode": "heroic" }
+    },
+    "28190": {
+      "name": "Scarab of the Infinite Cycle",
+      "slot": "trinket",
+      "source": { "type": "boss_drop", "bossId": "aeonus", "mode": "heroic" }
+    },
+    "27458": {
+      "name": "Bloody Surgeon's Mitts",
+      "slot": "hands",
+      "source": { "type": "boss_drop", "bossId": "broggok", "mode": "normal" }
+    },
+
+    "21875": {
+      "name": "Primal Mooncloth Robe",
+      "slot": "chest",
+      "source": { "type": "crafted", "profession": "tailoring", "bind": "bop" }
+    },
+    "21874": {
+      "name": "Primal Mooncloth Shoulders",
+      "slot": "shoulders",
+      "source": { "type": "crafted", "profession": "tailoring", "bind": "bop" }
+    },
+    "21873": {
+      "name": "Primal Mooncloth Belt",
+      "slot": "waist",
+      "source": { "type": "crafted", "profession": "tailoring", "bind": "bop" }
+    },
+
+    "28771": {
+      "name": "Light's Justice",
+      "slot": "weapon_1h",
+      "source": { "type": "boss_drop", "bossId": "prince", "mode": "raid" }
+    },
+    "28503": {
+      "name": "Bands of Indwelling",
+      "slot": "wrists",
+      "source": { "type": "boss_drop", "bossId": "maiden", "mode": "raid" }
+    },
+    "28508": {
+      "name": "Gloves of Saintly Blessings",
+      "slot": "hands",
+      "source": { "type": "boss_drop", "bossId": "attumen", "mode": "raid" }
+    },
+    "28663": {
+      "name": "Boots of the Incorrupt",
+      "slot": "feet",
+      "source": { "type": "boss_drop", "bossId": "aran", "mode": "raid" }
+    },
+    "28742": {
+      "name": "Pantaloons of Repentance",
+      "slot": "legs",
+      "source": { "type": "boss_drop", "bossId": "netherspite", "mode": "raid" }
+    },
+    "28653": {
+      "name": "Stainless Cloak of the Pure Hearted",
+      "slot": "back",
+      "source": { "type": "boss_drop", "bossId": "prince", "mode": "raid" }
+    },
+    "28822": {
+      "name": "Teeth of Gruul",
+      "slot": "neck",
+      "source": { "type": "boss_drop", "bossId": "gruul", "mode": "raid" }
+    },
+    "28763": {
+      "name": "Naaru Lightwarden's Band",
+      "slot": "ring",
+      "source": { "type": "boss_drop", "bossId": "magtheridon", "mode": "raid" }
+    },
+    "29290": {
+      "name": "Violet Signet of the Grand Restorer",
+      "slot": "ring",
+      "source": { "type": "reputation_vendor", "factionId": "violet_eye", "standing": "exalted" }
+    }
+  },
+
+  "steps": [
+    {
+      "id": "step_tailoring",
+      "title": "Tailoring power spike (optional but huge)",
+      "priority": 100,
+      "description": "Primal Mooncloth pieces are top-tier throughput early. If you go Tailoring, do this first because it’s time-gated by cooldowns/materials.",
+      "tasks": [
+        {
+          "id": "t_tailor_375",
+          "title": "Reach 375 Tailoring",
+          "kind": "progression",
+          "dependencies": [],
+          "completion": { "type": "manual" },
+          "estimates": { "timeHours": 6, "notes": "Varies massively by gold/material availability." }
+        },
+        {
+          "id": "t_mooncloth_spec",
+          "title": "Choose Mooncloth specialization",
+          "kind": "unlock",
+          "dependencies": ["t_tailor_375"],
+          "completion": { "type": "manual" },
+          "estimates": { "timeHours": 1 }
+        },
+        {
+          "id": "t_craft_pmc_robe",
+          "title": "Craft Primal Mooncloth Robe (21875)",
+          "kind": "gear",
+          "dependencies": ["t_mooncloth_spec"],
+          "completion": { "type": "item_confirmed", "itemId": "21875" },
+          "rewards": [{ "type": "item", "itemId": "21875" }]
+        },
+        {
+          "id": "t_craft_pmc_shoulders",
+          "title": "Craft Primal Mooncloth Shoulders (21874)",
+          "kind": "gear",
+          "dependencies": ["t_mooncloth_spec"],
+          "completion": { "type": "item_confirmed", "itemId": "21874" },
+          "rewards": [{ "type": "item", "itemId": "21874" }]
+        },
+        {
+          "id": "t_craft_pmc_belt",
+          "title": "Craft Primal Mooncloth Belt (21873)",
+          "kind": "gear",
+          "dependencies": ["t_mooncloth_spec"],
+          "completion": { "type": "item_confirmed", "itemId": "21873" },
+          "rewards": [{ "type": "item", "itemId": "21873" }]
+        }
+      ]
+    },
+
+    {
+      "id": "step_reps_core",
+      "title": "Core reputations (unlock multiple upgrades)",
+      "priority": 90,
+      "description": "These reps unlock long-lived pieces (and you’ll run these dungeons anyway for keys/heroics).",
+      "tasks": [
+        {
+          "id": "t_rep_cenarion_exalted",
+          "title": "Reach Exalted with Cenarion Expedition (Windcaller's Orb 28213)",
+          "kind": "reputation",
+          "dependencies": [],
+          "completion": { "type": "rep_at_least", "factionId": "cenarion_expedition", "standing": "exalted" },
+          "rewards": [{ "type": "item", "itemId": "28213" }],
+          "estimates": { "timeHours": 10, "notes": "Dungeon spam + quests. Adjust based on pace." }
+        },
+        {
+          "id": "t_buy_windcallers_orb",
+          "title": "Buy Windcaller's Orb (28213)",
+          "kind": "gear",
+          "dependencies": ["t_rep_cenarion_exalted"],
+          "completion": { "type": "item_confirmed", "itemId": "28213" }
+        },
+        {
+          "id": "t_rep_kot_exalted",
+          "title": "Reach Exalted with Keepers of Time (Bindings 28174)",
+          "kind": "reputation",
+          "dependencies": [],
+          "completion": { "type": "rep_at_least", "factionId": "keepers_of_time", "standing": "exalted" },
+          "rewards": [{ "type": "item", "itemId": "28174" }],
+          "estimates": { "timeHours": 8, "notes": "Old Hillsbrad + Black Morass runs." }
+        },
+        {
+          "id": "t_buy_bindings_timewalker",
+          "title": "Buy Bindings of the Timewalker (28174)",
+          "kind": "gear",
+          "dependencies": ["t_rep_kot_exalted"],
+          "completion": { "type": "item_confirmed", "itemId": "28174" }
+        },
+        {
+          "id": "t_rep_hh_thrall_revered",
+          "title": "Reach Revered with Honor Hold / Thrallmar (Ancestral Band 29373)",
+          "kind": "reputation",
+          "dependencies": [],
+          "completion": { "type": "rep_at_least_any", "options": [
+            { "factionId": "honor_hold", "standing": "revered" },
+            { "factionId": "thrallmar", "standing": "revered" }
+          ]},
+          "rewards": [{ "type": "item", "itemId": "29373" }],
+          "estimates": { "timeHours": 6, "notes": "Hellfire dungeons + quests." }
+        },
+        {
+          "id": "t_buy_ancestral_band",
+          "title": "Buy Ancestral Band (29373)",
+          "kind": "gear",
+          "dependencies": ["t_rep_hh_thrall_revered"],
+          "completion": { "type": "item_confirmed", "itemId": "29373" }
+        }
+      ]
+    },
+
+    {
+      "id": "step_targeted_dungeons",
+      "title": "Targeted dungeons for Pre-Raid BiS",
+      "priority": 80,
+      "description": "Farm these in an efficient order: pieces that last longest first.",
+      "tasks": [
+        {
+          "id": "t_heroic_auch_cloak",
+          "title": "Heroic Auchenai Crypts: Light-Touched Stole of Altruism (29354)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "29354" },
+          "rewards": [{ "type": "item", "itemId": "29354" }],
+          "how": { "instanceId": "auch_crypts", "bossId": "maladaar", "mode": "heroic" }
+        },
+        {
+          "id": "t_auch_boots",
+          "title": "Auchenai Crypts (Normal): Slippers of Serenity (27451)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "27451" },
+          "rewards": [{ "type": "item", "itemId": "27451" }],
+          "how": { "instanceId": "auch_crypts", "bossId": "maladaar", "mode": "normal" }
+        },
+        {
+          "id": "t_shadowlab_weapon",
+          "title": "Heroic Shadow Labyrinth: Shockwave Truncheon (29353)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "29353" },
+          "rewards": [{ "type": "item", "itemId": "29353" }],
+          "how": { "instanceId": "shadow_lab", "bossId": "murmur", "mode": "heroic" }
+        },
+        {
+          "id": "t_shadowlab_wand",
+          "title": "Shadow Labyrinth (Normal): Soul-Wand of the Aldor (27885)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "27885" },
+          "rewards": [{ "type": "item", "itemId": "27885" }],
+          "how": { "instanceId": "shadow_lab", "bossId": "hellmaw", "mode": "normal" }
+        },
+        {
+          "id": "t_steamvault_legs",
+          "title": "Heroic Steamvault: Pontifex Kilt (30543)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "30543" },
+          "rewards": [{ "type": "item", "itemId": "30543" }],
+          "how": { "instanceId": "steamvault", "bossId": "kalithresh", "mode": "heroic" }
+        },
+        {
+          "id": "t_underbog_ring",
+          "title": "Heroic Underbog: Ring of Fabled Hope (27780)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "27780" },
+          "rewards": [{ "type": "item", "itemId": "27780" }],
+          "how": { "instanceId": "underbog", "bossId": "black_stalker", "mode": "heroic" }
+        },
+        {
+          "id": "t_blackmorass_trinket",
+          "title": "Heroic Black Morass: Scarab of the Infinite Cycle (28190)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "28190" },
+          "rewards": [{ "type": "item", "itemId": "28190" }],
+          "how": { "instanceId": "black_morass", "bossId": "aeonus", "mode": "heroic" }
+        },
+        {
+          "id": "t_bloodfurnace_gloves",
+          "title": "Blood Furnace (Normal): Bloody Surgeon's Mitts (27458)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "27458" },
+          "rewards": [{ "type": "item", "itemId": "27458" }],
+          "how": { "instanceId": "blood_furnace", "bossId": "broggok", "mode": "normal" }
+        }
+      ]
+    },
+
+    {
+      "id": "step_badges",
+      "title": "Badges of Justice priorities",
+      "priority": 70,
+      "description": "Badges give huge value early. Buy these ASAP.",
+      "tasks": [
+        {
+          "id": "t_badges_41",
+          "title": "Earn 41 Badges of Justice (for Essence of the Martyr)",
+          "kind": "currency",
+          "dependencies": [],
+          "completion": { "type": "currency_at_least", "currencyId": "badge_of_justice", "amount": 41 },
+          "estimates": { "timeHours": 12, "notes": "Depends on heroic pace + Kara clears." }
+        },
+        {
+          "id": "t_buy_martyr",
+          "title": "Buy Essence of the Martyr (29376)",
+          "kind": "gear",
+          "dependencies": ["t_badges_41"],
+          "completion": { "type": "item_confirmed", "itemId": "29376" },
+          "rewards": [{ "type": "item", "itemId": "29376" }]
+        },
+        {
+          "id": "t_badges_50",
+          "title": "Earn 50 Badges of Justice (for Cowl of Naaru Blessings)",
+          "kind": "currency",
+          "dependencies": [],
+          "completion": { "type": "currency_at_least", "currencyId": "badge_of_justice", "amount": 50 }
+        },
+        {
+          "id": "t_buy_cowl",
+          "title": "Buy Cowl of Naaru Blessings (32084)",
+          "kind": "gear",
+          "dependencies": ["t_badges_50"],
+          "completion": { "type": "item_confirmed", "itemId": "32084" },
+          "rewards": [{ "type": "item", "itemId": "32084" }]
+        }
+      ]
+    },
+
+    {
+      "id": "step_karazhan_access",
+      "title": "Karazhan access and weekly routine",
+      "priority": 60,
+      "description": "Get into weekly Kara as early as possible (badges + key drops + BiS pieces).",
+      "tasks": [
+        {
+          "id": "t_kara_attune",
+          "title": "Complete Karazhan attunement (Master's Key chain)",
+          "kind": "unlock",
+          "dependencies": [],
+          "completion": { "type": "manual" },
+          "estimates": { "timeHours": 4, "notes": "Dungeon steps + quest chain." }
+        },
+        {
+          "id": "t_weekly_kara_clear",
+          "title": "Weekly: Clear Karazhan",
+          "kind": "repeatable",
+          "repeatable": { "cadence": "weekly", "reset": "tuesday" },
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "manual_repeatable" }
+        }
+      ]
+    },
+
+    {
+      "id": "step_raid_bis_p1",
+      "title": "Phase 1 raid upgrades (Kara/Gruul/Mag)",
+      "priority": 50,
+      "description": "These are the big-ticket raid items to chase after your pre-raid baseline is stable.",
+      "tasks": [
+        {
+          "id": "t_kara_gloves_28508",
+          "title": "Karazhan: Gloves of Saintly Blessings (28508)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28508" },
+          "how": { "instanceId": "karazhan", "bossId": "attumen", "mode": "raid" }
+        },
+        {
+          "id": "t_kara_bracers_28503",
+          "title": "Karazhan: Bands of Indwelling (28503)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28503" },
+          "how": { "instanceId": "karazhan", "bossId": "maiden", "mode": "raid" }
+        },
+        {
+          "id": "t_kara_boots_28663",
+          "title": "Karazhan: Boots of the Incorrupt (28663)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28663" },
+          "how": { "instanceId": "karazhan", "bossId": "aran", "mode": "raid" }
+        },
+        {
+          "id": "t_kara_legs_28742",
+          "title": "Karazhan: Pantaloons of Repentance (28742)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28742" },
+          "how": { "instanceId": "karazhan", "bossId": "netherspite", "mode": "raid" }
+        },
+        {
+          "id": "t_kara_cloak_28653",
+          "title": "Karazhan: Stainless Cloak of the Pure Hearted (28653)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28653" },
+          "how": { "instanceId": "karazhan", "bossId": "prince", "mode": "raid" }
+        },
+        {
+          "id": "t_kara_weapon_28771",
+          "title": "Karazhan: Light's Justice (28771)",
+          "kind": "gear",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "item_confirmed", "itemId": "28771" },
+          "how": { "instanceId": "karazhan", "bossId": "prince", "mode": "raid" }
+        },
+        {
+          "id": "t_gruul_neck_28822",
+          "title": "Gruul: Teeth of Gruul (28822)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "28822" },
+          "how": { "instanceId": "gruuls_lair", "bossId": "gruul", "mode": "raid" }
+        },
+        {
+          "id": "t_mag_ring_28763",
+          "title": "Magtheridon: Naaru Lightwarden's Band (28763)",
+          "kind": "gear",
+          "dependencies": [],
+          "completion": { "type": "item_confirmed", "itemId": "28763" },
+          "how": { "instanceId": "magtheridons_lair", "bossId": "magtheridon", "mode": "raid" }
+        },
+        {
+          "id": "t_rep_violet_eye_exalted",
+          "title": "Reach Exalted with The Violet Eye (Violet Signet 29290)",
+          "kind": "reputation",
+          "dependencies": ["t_kara_attune"],
+          "completion": { "type": "rep_at_least", "factionId": "violet_eye", "standing": "exalted" },
+          "rewards": [{ "type": "item", "itemId": "29290" }]
+        }
+      ]
+    }
+  ]
+}
