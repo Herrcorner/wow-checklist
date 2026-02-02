@@ -41,6 +41,7 @@
       "id": "dungeon-shadow-lab-heroic-truncheon",
       "title": "Run Heroic Shadow Labyrinth for Shockwave Truncheon",
       "type": "dungeon",
+      "powerGain": 4,
       "prerequisites": ["rep-thrallmar-honhold-revered"],
       "completion": {
         "type": "item_owned",

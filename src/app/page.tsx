@@ -14,12 +14,87 @@ type Task = {
   why?: string;
   prerequisites?: string[];
   steps?: string[];
-  completion?: CompletionRule;
+  unlockValue?: number;
+  timeGated?: boolean;
+  powerGain?: number;
 };
 
 type Checklist = {
   title: string;
   tasks: Task[];
+};
+
+const scoreTask = (task: Task) => {
+  const unlockValue = task.unlockValue ?? 0;
+  const powerGain = task.powerGain ?? 0;
+  const timeGated = task.timeGated ? 2 : 0;
+
+  return unlockValue + powerGain + timeGated;
+};
+
+const getTopologicalOrder = (tasks: Task[], done: Record<string, boolean>) => {
+  const remaining = tasks.filter((task) => !done[task.id]);
+  const taskMap = new Map(remaining.map((task) => [task.id, task]));
+  const indegree = new Map<string, number>();
+  const edges = new Map<string, string[]>();
+
+  remaining.forEach((task) => {
+    indegree.set(task.id, 0);
+    edges.set(task.id, []);
+  });
+
+  remaining.forEach((task) => {
+    (task.prerequisites ?? []).forEach((prereq) => {
+      if (!taskMap.has(prereq)) return;
+
+      const current = indegree.get(task.id) ?? 0;
+      indegree.set(task.id, current + 1);
+      edges.get(prereq)?.push(task.id);
+    });
+  });
+
+  const ordered: Task[] = [];
+  const ready: Task[] = remaining.filter(
+    (task) => (indegree.get(task.id) ?? 0) === 0,
+  );
+
+  const sortReady = () =>
+    ready.sort((a, b) => {
+      const scoreDiff = scoreTask(b) - scoreTask(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.title.localeCompare(b.title);
+    });
+
+  while (ready.length > 0) {
+    sortReady();
+    const current = ready.shift();
+    if (!current) break;
+
+    ordered.push(current);
+
+    edges.get(current.id)?.forEach((neighborId) => {
+      const nextValue = (indegree.get(neighborId) ?? 0) - 1;
+      indegree.set(neighborId, nextValue);
+      if (nextValue === 0) {
+        const neighbor = taskMap.get(neighborId);
+        if (neighbor) ready.push(neighbor);
+      }
+    });
+  }
+
+  if (ordered.length !== remaining.length) {
+    const fallback = remaining
+      .filter((task) => !ordered.find((orderedTask) => orderedTask.id === task.id))
+      .sort((a, b) => {
+        const scoreDiff = scoreTask(b) - scoreTask(a);
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.title.localeCompare(b.title);
+      });
+
+    ordered.push(...fallback);
+  }
+
+  return ordered;
 };
 
 export default function Home() {
@@ -36,7 +111,7 @@ export default function Home() {
     }
   });
 
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(false);
 
   const setOverridesAndPersist = (next: Record<string, boolean>) => {
     setManualOverrides(next);
@@ -78,7 +153,7 @@ export default function Home() {
     (t.prerequisites ?? []).every((p) => isCompleted(p) === true);
 
   // ✅ No useMemo => fixes React Compiler preserve-manual-memoization + deps warning
-  const baseTasks = showCompleted ? tasks : tasks.filter((t) => !isCompleted(t.id));
+  const baseTasks = hideCompleted ? tasks.filter((t) => !done[t.id]) : tasks;
 
   const visibleTasks = [...baseTasks].sort((a, b) => {
     // Focus-first at the top
@@ -95,7 +170,8 @@ export default function Home() {
     return a.title.localeCompare(b.title);
   });
 
-  const completedCount = tasks.filter((t) => isCompleted(t.id)).length;
+  const completedCount = tasks.filter((t) => done[t.id]).length;
+  const nextTasks = getTopologicalOrder(tasks, done).slice(0, 5);
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -125,6 +201,42 @@ export default function Home() {
           </label>
         </div>
       </div>
+
+      <section className="mt-6 rounded-lg border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-medium">Next 5 tasks</h2>
+          <p className="text-xs opacity-70">
+            Sorted by prerequisites + unlock, time-gating, and power gain.
+          </p>
+        </div>
+        <ul className="mt-3 space-y-3">
+          {nextTasks.map((task) => {
+            const ready = isReady(task);
+            const score = scoreTask(task);
+
+            return (
+              <li
+                key={task.id}
+                className="rounded-md border border-dashed px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={ready ? "" : "opacity-60"}>
+                    {task.title}
+                  </span>
+                  <span className="text-xs uppercase tracking-wide opacity-60">
+                    score {score}
+                  </span>
+                </div>
+                {!ready && (
+                  <p className="mt-1 text-xs opacity-60">
+                    Locked until prerequisites are completed.
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       <div className="mt-6 space-y-4">
         {visibleTasks.map((t) => {
