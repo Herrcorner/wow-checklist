@@ -161,7 +161,10 @@ const getStandingRank = (standingName: string) => {
   return standingRank[key] ?? -1;
 };
 
-const shouldCompleteRepTask = (task: Task, reputations: SyncResponse["reputations"]) => {
+const shouldCompleteRepTask = (
+  task: Task,
+  reputations: SyncResponse["reputations"],
+): boolean => {
   if (!task.completion) return false;
 
   if (task.completion.type === "rep_at_least") {
