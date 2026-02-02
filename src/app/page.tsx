@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import checklist from "@/data/checklist.json";
 
 type Task = {
@@ -16,18 +16,17 @@ type Task = {
 export default function Home() {
   const tasks = (checklist as { title: string; tasks: Task[] }).tasks;
 
-  const [done, setDone] = useState<Record<string, boolean>>({});
-  const [showCompleted, setShowCompleted] = useState(false);
-
-  // Load completion state once on client
-  useEffect(() => {
+  const [done, setDone] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
     try {
-      const saved = localStorage.getItem("done");
-      if (saved) setDone(JSON.parse(saved));
+      const saved = window.localStorage.getItem("done");
+      return saved ? JSON.parse(saved) : {};
     } catch {
-      // ignore
+      return {};
     }
-  }, []);
+  });
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [showReadyOnly, setShowReadyOnly] = useState(false);
 
   const setDoneAndPersist = (next: Record<string, boolean>) => {
     setDone(next);
@@ -39,13 +38,16 @@ export default function Home() {
     setDoneAndPersist(next);
   };
 
-  const isReady = (t: Task) =>
-    (t.prerequisites ?? []).every((p) => done[p] === true);
+  const isReady = useCallback(
+    (t: Task) => (t.prerequisites ?? []).every((p) => done[p] === true),
+    [done],
+  );
 
   const visibleTasks = useMemo(() => {
     const base = showCompleted ? tasks : tasks.filter((t) => !done[t.id]);
+    const filtered = showReadyOnly ? base.filter((t) => isReady(t)) : base;
 
-    return [...base].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const af = a.focusFirst ? 1 : 0;
       const bf = b.focusFirst ? 1 : 0;
       if (af !== bf) return bf - af;
@@ -56,7 +58,7 @@ export default function Home() {
 
       return a.title.localeCompare(b.title);
     });
-  }, [tasks, done, showCompleted]);
+  }, [tasks, done, showCompleted, showReadyOnly, isReady]);
 
   const completedCount = tasks.filter((t) => done[t.id]).length;
 
@@ -69,14 +71,24 @@ export default function Home() {
           Completed: {completedCount}/{tasks.length}
         </p>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showCompleted}
-            onChange={(e) => setShowCompleted(e.target.checked)}
-          />
-          Show completed
-        </label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showReadyOnly}
+              onChange={(e) => setShowReadyOnly(e.target.checked)}
+            />
+            Show only ready tasks
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showCompleted}
+              onChange={(e) => setShowCompleted(e.target.checked)}
+            />
+            Show completed
+          </label>
+        </div>
       </div>
 
       <div className="mt-6 space-y-4">
@@ -88,7 +100,9 @@ export default function Home() {
             <div
               key={t.id}
               className={`rounded-lg border p-4 ${
-                !ready ? "opacity-60" : ""
+                !ready
+                  ? "border-amber-400/70 bg-amber-50/60 text-amber-950"
+                  : ""
               }`}
             >
               <div className="flex items-start gap-3">
@@ -115,8 +129,8 @@ export default function Home() {
                     )}
 
                     {!ready && (
-                      <span className="rounded bg-black/5 px-2 py-0.5 text-xs">
-                        locked (finish prereqs)
+                      <span className="rounded border border-amber-500/60 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                        🔒 Locked (finish prereqs)
                       </span>
                     )}
                   </div>
